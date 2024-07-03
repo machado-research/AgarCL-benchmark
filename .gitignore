@@ -1,0 +1,25 @@
+# ignore all results folders
+results/
+results-*/
+plots/
+checkpoints/
+results.tar
+.tmp/
+runs/
+videos/
+wandb/
+
+# ignore python caches
+.venv/
+venv/
+env/
+# env*/
+__pycache__
+*.pyc
+
+# ignore test experiments
+test.json
+
+# ignore editor settings
+.vscode
+.DS_Store

@@ -1,0 +1,3 @@
+[submodule "modules/agar"]
+	path = modules/agar
+	url = https://github.com/machado-research/AgarLE.git
