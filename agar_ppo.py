@@ -26,6 +26,7 @@ class Args:
     track: bool = True
     wandb_project_name: str = "Agar-PPO"
     wandb_entity: str = None
+    render: bool = True
 
     # Algorithm specific arguments
     total_timesteps: int = 10000
@@ -85,6 +86,7 @@ torch.manual_seed(args.seed)
 torch.backends.cudnn.deterministic = args.torch_deterministic
 
 env = gym.make('agario-grid-v0', **default_config)
+env = FlattenObservation(env)
 env = NormalizeObservation(env)
 env = TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
 env = NormalizeReward(env, gamma=args.gamma)
@@ -113,11 +115,11 @@ device = torch.device("cuda" if torch.cuda.is_available()
                       and args.cuda else "cpu")
 
 obs_shape = (np.prod(env.observation_space.shape),)
-env.observation_space = gym.spaces.Box(-1,
-                                       np.iinfo(np.int32).max, obs_shape, dtype=np.float32)
+env.observation_space.dtype = np.float32
 
-env.action_space = (gym.spaces.Box(-10, 10, env.action_space[0].shape, dtype=np.float32),
+env.action_space = (gym.spaces.Box(-1, 1, env.action_space[0].shape, dtype=np.float32),
                     gym.spaces.Discrete(3))
+
 action_shape = env.action_space[0].shape
 max_action = float(env.action_space[0].high[0])
 min_action = float(env.action_space[0].low[0])
@@ -141,7 +143,7 @@ moving_avg = 0
 
 start_time = time.time()
 next_obs = env.reset()
-next_obs = torch.Tensor(next_obs.flatten()).to(device)
+next_obs = torch.Tensor(next_obs).to(device)
 next_done = torch.zeros(args.num_envs).to(device)
 
 for iteration in range(1, args.num_iterations + 1):
@@ -170,10 +172,12 @@ for iteration in range(1, args.num_iterations + 1):
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, reward, termination, info = env.step(
             step_action)
-        # env.render()
+        if args.render:
+            env.render()
+            
         next_done = np.ones((1,)) * termination
         rewards[step] = torch.tensor(reward).to(device).view(-1)
-        next_obs, next_done = torch.Tensor(next_obs.flatten()).to(
+        next_obs, next_done = torch.Tensor(next_obs).to(
             device), torch.Tensor(next_done).to(device)
 
         avg_reward += reward

@@ -27,15 +27,15 @@ class Args:
     track: bool = True
     wandb_project_name: str = "Agar-SAC"
     wandb_entity: str = None
-    render: bool = False
+    render: bool = True
 
     # Algorithm specific arguments
-    total_timesteps: int = 10000
+    total_timesteps: int = 5000
     buffer_size: int = int(1e6)
     gamma: float = 0.99
     tau: float = 0.005
     batch_size: int = 256
-    learning_starts: int = 5e3
+    learning_starts: int = 1e3
     policy_lr: float = 3e-4
     q_lr: float = 1e-3
     policy_frequency: int = 2
@@ -98,12 +98,13 @@ writer.add_text(
 device = torch.device("cuda" if torch.cuda.is_available()
                       and args.cuda else "cpu")
 
-env.action_space = (gym.spaces.Box(-10, 10, env.action_space[0].shape, dtype=np.float32),
+env.action_space = (gym.spaces.Box(-1, 1, env.action_space[0].shape, dtype=np.float32),
                     gym.spaces.Discrete(3))
 max_action = float(env.action_space[0].high[0])
 min_action = float(env.action_space[0].low[0])
 action_shape = env.action_space[0].shape
 obs_shape = (np.prod(env.observation_space.shape),)
+env.observation_space.dtype = np.float32
 
 actor = Actor(action_shape, obs_shape, min_action, max_action).to(device)
 qf1 = SoftQNetwork(obs_shape, action_shape).to(device)
@@ -151,7 +152,7 @@ for global_step in range(args.total_timesteps):
     step_action = ([(action), 0])
     # TRY NOT TO MODIFY: execute the game and log data.
     next_obs, reward, termination, info = env.step(step_action)
-    
+
     if args.render:
         env.render()
 
