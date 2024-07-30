@@ -19,7 +19,7 @@ import gym_agario
 
 from src.algorithms.SAC import *
 from src.wrappers.gym import FlattenObservation
-from src.utils import modify_action
+from src.utils import modify_hybrid_action
 
 @dataclass
 class Args:
@@ -34,6 +34,7 @@ class Args:
 
     # Algorithm specific arguments
     total_timesteps: int = 5000
+    eval_timesteps: int = 1000
     buffer_size: int = int(1e6)
     gamma: float = 0.99
     tau: float = 0.005
@@ -104,13 +105,17 @@ device = torch.device("cuda" if torch.cuda.is_available()
 env.action_space = (gym.spaces.Box(-1, 1, env.action_space[0].shape, dtype=np.float32),
                     gym.spaces.Discrete(3))
 
+cont_action_shape = env.action_space[0].shape[0]
+dis_action_shape = env.action_space[1].n
+
 max_action = float(env.action_space[0].high[0])
 min_action = float(env.action_space[0].low[0])
-action_shape = (env.action_space[0].shape[0] + 1,)
+
+action_shape = (cont_action_shape + 1,)
 obs_shape = (np.prod(env.observation_space.shape),)
 env.observation_space.dtype = np.float32
 
-actor = Actor(action_shape, obs_shape, min_action, max_action).to(device)
+actor = HybridActor(cont_action_shape, dis_action_shape, obs_shape, min_action, max_action).to(device)
 qf1 = SoftQNetwork(obs_shape, action_shape).to(device)
 qf2 = SoftQNetwork(obs_shape, action_shape).to(device)
 qf1_target = SoftQNetwork(obs_shape, action_shape).to(device)
@@ -147,19 +152,16 @@ moving_avg = 0
 obs = env.reset()
 for global_step in range(args.total_timesteps):
     # ALGO LOGIC: put action logic here
-    if global_step < args.learning_starts:
-        action = gym.spaces.Box(-1, 1, action_shape, dtype=np.float32).sample()
-    else:
-        action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
-        action = action.detach().cpu().numpy()
+    # if global_step < args.learning_starts:
+    #     action = gym.spaces.Box(-1, 1, action_shape, dtype=np.float32).sample()
+    # else:
+    action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
+    action = action.detach().cpu().numpy()
     
-    step_action = modify_action(action, min_action, max_action)
+    step_action = modify_hybrid_action(action)
 
     # TRY NOT TO MODIFY: execute the game and log data.
     next_obs, reward, termination, info = env.step(step_action)
-
-    if args.render:
-        env.render()
 
     avg_reward += reward
     moving_avg = 0.99 * moving_avg + 0.01 * reward
@@ -179,7 +181,6 @@ for global_step in range(args.total_timesteps):
         with torch.no_grad():
             next_state_actions, next_state_log_pi, _ = actor.get_action(
                 data.next_observations)
-            print(next_state_actions.shape, next_state_log_pi.shape)
             qf1_next_target = qf1_target(
                 data.next_observations, next_state_actions)
             qf2_next_target = qf2_target(
@@ -252,6 +253,21 @@ for global_step in range(args.total_timesteps):
             if args.autotune:
                 writer.add_scalar("losses/alpha_loss",
                                   alpha_loss.item(), global_step)
+                
+for eval_step in range(args.eval_timesteps):
+    with torch.no_grad():
+        action, _, _ = actor.get_action(torch.Tensor(obs).to(device))
+        action = action.detach().cpu().numpy()
+        
+        step_action = modify_hybrid_action(action)
+
+        # TRY NOT TO MODIFY: execute the game and log data.
+        next_obs, reward, termination, info = env.step(
+            step_action)
+        if args.render:
+            env.render()
+        
+        next_obs = torch.Tensor(next_obs).to(device)
 
 env.close()
 writer.close()

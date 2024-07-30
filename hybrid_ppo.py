@@ -15,7 +15,8 @@ import gym_agario
 
 from src.algorithms.PPO import *
 from src.wrappers.gym import *
-from src.utils import modify_action
+from src.utils import modify_hybrid_action
+
 
 @dataclass
 class Args:
@@ -30,7 +31,7 @@ class Args:
 
     # Algorithm specific arguments
     total_timesteps: int = 30000
-    checkpoint_interval: int = 10000
+    eval_timesteps: int = 1000
     learning_rate: float = 3e-4
     num_envs: int = 1
     num_steps: int = 2048
@@ -72,7 +73,6 @@ default_config = {
     'reward_type': 1,
     'c_death': -100,  # reward = [diff or mass] - c_death if player is eaten
 }
-
 
 args = tyro.cli(Args)
 args.batch_size = int(args.num_envs * args.num_steps)
@@ -121,12 +121,16 @@ env.observation_space.dtype = np.float32
 env.action_space = (gym.spaces.Box(-1, 1, env.action_space[0].shape, dtype=np.float32),
                     gym.spaces.Discrete(3))
 
-action_shape = (env.action_space[0].shape[0] + 1, )
+cont_action_shape = env.action_space[0].shape[0]
+dis_action_shape = env.action_space[1].n
+
 max_action = float(env.action_space[0].high[0])
 min_action = float(env.action_space[0].low[0])
 
-agent = Agent(obs_shape, action_shape).to(device)
+agent = HybridAgent(obs_shape, cont_action_shape, dis_action_shape).to(device)
 optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+action_shape = (cont_action_shape + 1,)
 
 # ALGO Logic: Storage setup
 obs = torch.zeros((args.num_steps, args.num_envs) + obs_shape).to(device)
@@ -168,15 +172,13 @@ for iteration in range(1, args.num_iterations + 1):
         actions[step] = action
         logprobs[step] = logprob
         action = action.detach().cpu().numpy().squeeze()
-        
-        step_action = modify_action(action, min_action, max_action)
+
+        step_action = modify_hybrid_action(action)
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, reward, termination, info = env.step(
             step_action)
-        # if args.render:
-        #     env.render()
-            
+
         next_done = np.ones((1,)) * termination
         rewards[step] = torch.tensor(reward).to(device).view(-1)
         next_obs, next_done = torch.Tensor(next_obs).to(
@@ -271,14 +273,19 @@ for iteration in range(1, args.num_iterations + 1):
 
         if args.target_kl is not None and approx_kl > args.target_kl:
             break
-        
-    if iteration % args.checkpoint_interval == 0:
+
+    y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
+    var_y = np.var(y_true)
+    explained_var = np.nan if var_y == 0 else 1 - \
+        np.var(y_true - y_pred) / var_y
+
+    for eval_step in range(args.eval_timesteps):
         with torch.no_grad():
             action, _, _, _ = agent.get_action_and_value(
                 next_obs, action_limits=(min_action, max_action))
             action = action.detach().cpu().numpy().squeeze()
-        
-            step_action = modify_action(action, min_action, max_action)
+
+            step_action = modify_hybrid_action(action)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, termination, info = env.step(
@@ -286,11 +293,8 @@ for iteration in range(1, args.num_iterations + 1):
             if args.render:
                 env.render()
             
-
-    y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
-    var_y = np.var(y_true)
-    explained_var = np.nan if var_y == 0 else 1 - \
-        np.var(y_true - y_pred) / var_y
+            next_obs = torch.Tensor(next_obs).to(device)
+            
 
     # TRY NOT TO MODIFY: record rewards for plotting purposes
     writer.add_scalar("charts/learning_rate",
