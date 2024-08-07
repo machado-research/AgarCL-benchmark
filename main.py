@@ -18,7 +18,7 @@ class Args:
     torch_deterministic: bool = True
     cuda: bool = False
     track: bool = True
-    wandb_project_name: str = "Agar-SAC"
+    wandb_project_name: str = "Agar-PPO"
     wandb_entity: str = None
     render: bool = False
     hybrid: bool = False
@@ -68,7 +68,7 @@ if args.track:
     )
 
 
-rl_alg = SAC(
+rl_alg = PPO(
     total_timesteps=args.total_timesteps,
     eval_timesteps=args.eval_timesteps,
     env_name="agario-grid-v0",
@@ -77,44 +77,22 @@ rl_alg = SAC(
     cuda=args.cuda,
     hybrid=args.hybrid,
     render=args.render,
-    autotune=True,
-    q_lr=1e-3,
-    policy_lr=3e-4,
-    alpha=0.2,
+    anneal_lr=True,
+    num_envs=1,
+    num_steps=2048,
+    learning_rate=3e-4,
     gamma=0.99,
-    tau=0.005,
-    batch_size=256,
-    buffer_size=int(1e3),
-    policy_frequency=2,
-    target_network_frequency=1,
-    learning_starts=5e2
+    gae_lambda=0.95,
+    num_minibatches=32,
+    update_epochs=10,
+    norm_adv=True,
+    clip_coef=0.2,
+    clip_vloss=True,
+    ent_coef=0.0,
+    vf_coef=0.5,
+    max_grad_norm=0.5,
+    target_kl=None
 )
-
-# rl_alg = PPO(
-#     total_timesteps=args.total_timesteps,
-#     eval_timesteps=args.eval_timesteps,
-#     env_name="agario-grid-v0",
-#     env_config=default_config,
-#     run_name=run_name,
-#     cuda=args.cuda,
-#     hybrid=args.hybrid,
-#     render=args.render,
-#     anneal_lr=True,
-#     num_envs=1,
-#     num_steps=2048,
-#     learning_rate=3e-4,
-#     gamma=0.99,
-#     gae_lambda=0.95,
-#     num_minibatches=32,
-#     update_epochs=10,
-#     norm_adv=True,
-#     clip_coef=0.2,
-#     clip_vloss=True,
-#     ent_coef=0.0,
-#     vf_coef=0.5,
-#     max_grad_norm=0.5,
-#     target_kl=None
-# )
 
 last_obs = rl_alg.train()
 rl_alg.eval(last_obs)
