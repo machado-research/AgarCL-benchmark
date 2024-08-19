@@ -1,8 +1,8 @@
-import gym
+# import gym
 import gym_agario
 
 import time
-# import gymnasium as gym
+import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
@@ -285,7 +285,7 @@ class SAC:
                     action, self.min_action, self.max_action)
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, termination, info = self.env.step(step_action)
+            next_obs, reward, termination, truncation, info = self.env.step(step_action)
 
             avg_reward += reward
             moving_avg = 0.99 * moving_avg + 0.01 * reward
@@ -401,7 +401,7 @@ class SAC:
                     step_action = modify_action(
                         action, self.min_action, self.max_action)
 
-                next_obs, reward, termination, info = self.env.step(
+                next_obs, reward, termination, truncation, info = self.env.step(
                     step_action)
 
                 eval_avg_reward += reward
