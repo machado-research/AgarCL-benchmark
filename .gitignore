@@ -13,6 +13,7 @@ wandb/
 .venv/
 venv/
 env/
+build/
 # env*/
 __pycache__
 *.pyc
@@ -23,3 +24,4 @@ test.json
 # ignore editor settings
 .vscode
 .DS_Store
+.history
