@@ -2,6 +2,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 from gymnasium.wrappers.normalize import RunningMeanStd
+import imageio
 
 from typing import Callable, Any
 
@@ -206,3 +207,46 @@ class FlattenObservation(gym.ObservationWrapper):
         """Returns a modified observation using :meth:`self.observation` after calling :meth:`env.step`."""
         observation, reward, terminated, truncated, info = self.env.step(action)
         return self.observation(observation), reward, terminated, truncated, info
+    
+
+class VideoRecorderWrapper(gym.Wrapper):
+    """Wrapper that records a video of an episode, if render_mode is rgb_array"""
+    def __init__(self, env, video_path):
+        super().__init__(env)
+        self.video_path = video_path
+        self.frames = []
+        self.video_writer = None
+        
+    def reset(self, **kwargs):
+        observation = self.env.reset(**kwargs)
+        if self.env.render_mode == "rgb_array":
+            self.start_video_writer()
+        return observation
+    
+    def start_video_writer(self):
+        if self.video_writer is None:
+            self.video_writer = imageio.get_writer(self.video_path, fps=50)
+    
+    def record_frame(self):
+        frame = self.env.render()
+        for i in range(self.env.unwrapped.num_frames):
+            if isinstance(frame, np.ndarray):
+                self.frames.append(frame[i])
+    
+    def step(self, action):
+        observation, reward, termination, truncation, info = self.env.step(action)
+        if self.env.render_mode == "rgb_array":
+            self.record_frame()
+        return observation, reward, termination, truncation, info
+    
+    def close_video_writer(self):
+        if self.video_writer is not None:
+            for frame in self.frames:
+                self.video_writer.append_data(frame)
+            self.video_writer.close()
+            self.video_writer = None
+            self.frames = []
+            
+    def close(self):
+        self.close_video_writer()
+        self.env.close()

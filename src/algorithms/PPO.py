@@ -24,6 +24,8 @@ def make_env(env_name, config, gamma):
     env = NormalizeReward(env, gamma=gamma)
     env = TransformReward(
         env, lambda reward: np.clip(reward, -10, 10))
+    if config['render_mode'] == "rgb_array":
+        env = VideoRecorderWrapper(env, config['video_path'])
     return env
 
 

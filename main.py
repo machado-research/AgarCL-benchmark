@@ -20,7 +20,7 @@ class Args:
     track: bool = True
     wandb_project_name: str = "Agar-PPO"
     wandb_entity: str = None
-    render: bool = False
+    render: bool = True
     hybrid: bool = False
     total_timesteps: int = 1000
     eval_timesteps: int = 3000
@@ -35,15 +35,18 @@ default_config = {
     'num_bots':        10,
     'pellet_regen':    True,
     'grid_size':       32,
+    'screen_len': 512,
     'observe_cells':   False,
     'observe_others':  True,
     'observe_viruses': True,
     'observe_pellets': True,
     'obs_type': "grid",  # Two options: screen, grid
+    'render_mode': "rgb_array", # Two options: human, rgb_array
     'allow_respawn': True,  # If False, the game will end when the player is eaten
     # Two options: "mass:reward=mass", "diff = reward=mass(t)-mass(t-1)"
     'reward_type': 1,
     'c_death': -100,  # reward = [diff or mass] - c_death if player is eaten
+    'video_path': "screen_video.mp4" # for render_mode: rgb_array
 }
 
 args = tyro.cli(Args)
@@ -71,7 +74,7 @@ if args.track:
 rl_alg = PPO(
     total_timesteps=args.total_timesteps,
     eval_timesteps=args.eval_timesteps,
-    env_name="agario-grid-v0",
+    env_name="agario-screen-v0",
     env_config=default_config,
     run_name=run_name,
     cuda=args.cuda,
