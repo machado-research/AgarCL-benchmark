@@ -173,6 +173,9 @@ class PPO:
         self.total_timesteps = total_timesteps
         self.eval_timesteps = eval_timesteps
 
+        self.num_bots = env_config['num_bots']
+        self.run_name = run_name
+
         self.num_envs = num_envs
         self.num_steps = num_steps
         self.anneal_lr = anneal_lr
@@ -235,14 +238,15 @@ class PPO:
 
     def train(self):
         global_step = 0
-        avg_reward = 0
         moving_avg = 0
+        cum_reward = 0
+        bot_moving_avg = np.zeros(self.num_bots)
+        bot_cum_reward = np.zeros(self.num_bots)
 
         start_time = time.time()
         next_obs = self.env.reset()
         next_obs = torch.Tensor(next_obs).to(self.device)
         next_done = torch.zeros(self.num_envs).to(self.device)
-
         for iteration in range(1, self.num_iterations + 1):
             # Annealing the rate if instructed to do so.
             if self.anneal_lr:
@@ -272,20 +276,52 @@ class PPO:
                         action, self.min_action, self.max_action)
 
                 # TRY NOT TO MODIFY: execute the game and log data.
-                next_obs, reward, termination, truncation, info = self.env.step(
+                next_obs, rewards, termination, truncation, info = self.env.step(
                     step_action)
-
+                
+                reward = rewards[0]
                 next_done = np.ones((1,)) * termination
                 self.rewards[step] = torch.tensor(
                     reward).to(self.device).view(-1)
                 next_obs, next_done = torch.Tensor(next_obs).to(
                     self.device), torch.Tensor(next_done).to(self.device)
 
-                avg_reward += reward
+                cum_reward += reward
                 moving_avg = 0.99 * moving_avg + 0.01 * reward
 
-                self.writer.add_scalar("avg_reward", avg_reward, global_step)
-                self.writer.add_scalar("moving_avg", moving_avg, global_step)
+                # self.writer.add_scalar("cum_reward", cum_reward, global_step)
+                # self.writer.add_scalar("avg_reward", cum_reward / global_step, global_step)
+                # self.writer.add_scalar("moving_avg", moving_avg, global_step)
+                for idx, rew in enumerate(rewards[1:]):
+                    bot_cum_reward[idx] += rew
+                    bot_moving_avg[idx] = 0.99 * bot_moving_avg[idx] + 0.01 * rew
+
+                if global_step % 1000 == 0:
+                    with open(f"runs/{self.run_name}/cum_reward.csv", "a") as f:
+                        f.write(f"{global_step},{cum_reward}\n")
+                    with open(f"runs/{self.run_name}/avg_reward.csv", "a") as f:
+                        f.write(f"{global_step},{cum_reward / global_step}\n")
+                    with open(f"runs/{self.run_name}/moving_avg.csv", "a") as f:
+                        f.write(f"{global_step},{moving_avg}\n")
+
+                    for idx, rew in enumerate(rewards[1:]):
+                    #     bot_cum_reward[idx] += rew
+                    #     bot_moving_avg[idx] = 0.99 * bot_moving_avg[idx] + 0.01 * rew
+                    #     self.writer.add_scalar(
+                    #         f"cum_reward_{idx}", bot_cum_reward[idx], global_step)
+                    #     self.writer.add_scalar(
+                    #         f"avg_reward_{idx}", bot_cum_reward[idx] / global_step, global_step)
+                    #     self.writer.add_scalar(
+                    #         f"moving_avg_{idx}", bot_moving_avg[idx], global_step)
+                        
+                        with open(f"runs/{self.run_name}/cum_reward_{idx}.csv", "a") as f:
+                            f.write(f"{global_step},{bot_cum_reward[idx]}\n")
+                        with open(f"runs/{self.run_name}/avg_reward_{idx}.csv", "a") as f:
+                            f.write(f"{global_step},{bot_cum_reward[idx] / global_step}\n")
+                        with open(f"runs/{self.run_name}/moving_avg_{idx}.csv", "a") as f:
+                                f.write(f"{global_step},{bot_moving_avg[idx]}\n")
+
+                
 
             # bootstrap value if not done
             with torch.no_grad():

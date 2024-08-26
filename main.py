@@ -17,12 +17,12 @@ class Args:
     seed: int = 0
     torch_deterministic: bool = True
     cuda: bool = False
-    track: bool = True
+    track: bool = False
     wandb_project_name: str = "Agar-PPO"
     wandb_entity: str = None
     render: bool = False
     hybrid: bool = False
-    total_timesteps: int = 1000
+    total_timesteps: int = 2048
     eval_timesteps: int = 3000
 
 
