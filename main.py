@@ -22,7 +22,7 @@ class Args:
     wandb_entity: str = None
     render: bool = False
     hybrid: bool = False
-    total_timesteps: int = 2048
+    total_timesteps: int = 2048*1000
     eval_timesteps: int = 3000
 
 
