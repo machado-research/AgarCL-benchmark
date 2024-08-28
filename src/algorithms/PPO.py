@@ -278,7 +278,7 @@ class PPO:
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_obs, rewards, termination, truncation, info = self.env.step(
                     step_action)
-                
+                import pdb; pdb.set_trace()
                 reward = rewards[0]
                 next_done = np.ones((1,)) * termination
                 self.rewards[step] = torch.tensor(
