@@ -8,7 +8,7 @@ results.tar
 runs/
 videos/
 wandb/
-
+modules/*
 # ignore python caches
 .venv/
 venv/
