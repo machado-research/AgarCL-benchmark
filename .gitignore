@@ -23,3 +23,6 @@ test.json
 # ignore editor settings
 .vscode
 .DS_Store
+
+configs/
+jobs/*.txt
