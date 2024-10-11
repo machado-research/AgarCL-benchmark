@@ -13,6 +13,7 @@ wandb/
 .venv/
 venv/
 env/
+build/
 # env*/
 __pycache__
 *.pyc
@@ -26,3 +27,4 @@ test.json
 
 configs/
 jobs/*.txt
+.history

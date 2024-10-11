@@ -1,6 +1,6 @@
-# import gymnasium as gym
+import gymnasium as gym
 import time
-import gym
+# import gym
 import gym_agario
 import numpy as np
 import torch
@@ -24,6 +24,8 @@ def make_env(env_name, config, gamma):
     env = NormalizeReward(env, gamma=gamma)
     env = TransformReward(
         env, lambda reward: np.clip(reward, -10, 10))
+    if config['render_mode'] == "rgb_array":
+        env = VideoRecorderWrapper(env, config['video_path'])
     return env
 
 
@@ -272,7 +274,7 @@ class PPO:
                         action, self.min_action, self.max_action)
 
                 # TRY NOT TO MODIFY: execute the game and log data.
-                next_obs, reward, termination, info = self.env.step(
+                next_obs, reward, termination, truncation, info = self.env.step(
                     step_action)
 
                 next_done = np.ones((1,)) * termination
@@ -418,7 +420,7 @@ class PPO:
                     step_action = modify_action(
                         action, self.min_action, self.max_action)
 
-                next_obs, reward, termination, info = self.env.step(
+                next_obs, reward, termination, truncation, info = self.env.step(
                     step_action)
 
                 eval_avg_reward += reward
