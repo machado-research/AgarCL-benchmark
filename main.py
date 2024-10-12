@@ -17,7 +17,7 @@ class Args:
     seed: int = 0
     torch_deterministic: bool = True
     cuda: bool = False
-    track: bool = True
+    track: bool = False
     wandb_project_name: str = "Agar-PPO"
     wandb_entity: str = None
     render: bool = True
@@ -27,7 +27,7 @@ class Args:
 
 
 default_config = {
-    'ticks_per_step':  4,
+    'ticks_per_step':  1,
     'num_frames':      1,
     'arena_size':      500,
     'num_pellets':     500,
@@ -40,7 +40,7 @@ default_config = {
     'observe_others':  True,
     'observe_viruses': True,
     'observe_pellets': True,
-    'obs_type': "grid",  # Two options: screen, grid
+    'obs_type': "screen",  # Two options: screen, grid
     'render_mode': "rgb_array", # Two options: human, rgb_array
     'allow_respawn': True,  # If False, the game will end when the player is eaten
     # Two options: "mass:reward=mass", "diff = reward=mass(t)-mass(t-1)"

@@ -19,8 +19,8 @@ def make_env(env_name, config, gamma):
     # deal with dm_control's Dict observation space
     env = FlattenObservation(env)
     env = NormalizeObservation(env)
-    env = TransformObservation(
-        env, lambda obs: np.clip(obs, -10, 10))
+    # env = TransformObservation(
+        # env, lambda obs: np.clip(obs, -10, 10))
     env = NormalizeReward(env, gamma=gamma)
     env = TransformReward(
         env, lambda reward: np.clip(reward, -10, 10))
@@ -244,7 +244,9 @@ class PPO:
         next_obs = self.env.reset()
         next_obs = torch.Tensor(next_obs).to(self.device)
         next_done = torch.zeros(self.num_envs).to(self.device)
-
+        
+        import pdb; pdb.set_trace()
+        
         for iteration in range(1, self.num_iterations + 1):
             # Annealing the rate if instructed to do so.
             if self.anneal_lr:
