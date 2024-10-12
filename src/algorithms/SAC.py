@@ -1,8 +1,7 @@
-# import gym
+import gymnasium as gym
 import gym_agario
 
 import time
-import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
@@ -13,6 +12,8 @@ from stable_baselines3.common.buffers import ReplayBuffer
 
 from src.wrappers.gym import FlattenObservation
 from src.utils import modify_action, modify_hybrid_action
+from PyExpUtils.collection.Collector import Collector
+from PyExpUtils.collection.Sampler import Identity
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -5
@@ -160,51 +161,37 @@ class HybridActor(nn.Module):
 
 class SAC:
     def __init__(self,
-                 run_name: str,
-                 env_config: dict,
+                 env: gym.Env,
+                 seed: int,
+                 device: str,
+                 hypers: dict,
+                 collector_config: dict,
                  total_timesteps: int = 1e6,
                  eval_timesteps: int = 3000,
-                 env_name: str = "agario-grid-v0",
-                 cuda: bool = False,
-                 hybrid: bool = False,
                  render: bool = False,
-                 autotune: bool = False,
-                 q_lr: float = 1e-3,
-                 policy_lr: float = 3e-4,
-                 alpha: float = 0.2,
-                 buffer_size: int = int(1e6),
-                 learning_starts: int = 1e3,
-                 batch_size: int = 256,
-                 policy_frequency: int = 2,
-                 target_network_frequency: int = 1,
-                 gamma: float = 0.99,
-                 tau: float = 0.005,
                  ) -> None:
 
-        self.env = gym.make(env_name, **env_config)
-        self.env = FlattenObservation(self.env)
-
+        self.env = env
         self.total_timesteps = total_timesteps
         self.eval_timesteps = eval_timesteps
-
-        self.writer = SummaryWriter(f"runs/{run_name}")
-        self.cuda = cuda
-        self.hybrid = hybrid
         self.render = render
-        self.autotune = autotune
-        self.q_lr = q_lr
-        self.policy_lr = policy_lr
-        self.alpha = alpha
-        self.buffer_size = buffer_size
-        self.learning_starts = learning_starts
-        self.batch_size = batch_size
-        self.policy_frequency = policy_frequency
-        self.target_network_frequency = target_network_frequency
-        self.gamma = gamma
-        self.tau = tau
+        self.device = device
+        self.autotune = True
+        
+        self.collector = self.collector_init(collector_config)
+        self.collector.setIdx(seed)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available()
-                                   and self.cuda else "cpu")
+        self.hybrid = hypers['hybrid']
+        self.q_lr = hypers['q_lr']
+        self.policy_lr = hypers['policy_lr']
+        # self.alpha = alpha
+        self.buffer_size = int(hypers['buffer_size'])
+        self.learning_starts = int(hypers['learning_starts'])
+        self.batch_size = hypers['batch_size']
+        self.policy_frequency = hypers['policy_frequency']
+        self.target_network_frequency = hypers['target_network_frequency']
+        self.gamma = hypers['gamma']
+        self.tau = hypers['tau']
 
         self.env.action_space = (gym.spaces.Box(-1, 1, self.env.action_space[0].shape, dtype=np.float32),
                                  gym.spaces.Discrete(3))
@@ -237,24 +224,21 @@ class SAC:
         self.qf1_target.load_state_dict(self.qf1.state_dict())
         self.qf2_target.load_state_dict(self.qf2.state_dict())
         self.q_optimizer = optim.Adam(list(self.qf1.parameters()) +
-                                      list(self.qf2.parameters()), lr=q_lr)
+                                      list(self.qf2.parameters()), lr=self.q_lr)
         self.actor_optimizer = optim.Adam(
-            list(self.actor.parameters()), lr=policy_lr)
+            list(self.actor.parameters()), lr=self.policy_lr)
 
         # Automatic entropy tuning
-        if autotune:
-            self.target_entropy = - \
-                torch.prod(torch.Tensor(
-                    self.env.action_space[0].shape).to(self.device)).item()
-            self.log_alpha = torch.zeros(
-                1, requires_grad=True, device=self.device)
-            self.alpha = self.log_alpha.exp().item()
-            self.a_optimizer = optim.Adam([self.log_alpha], lr=q_lr)
-        else:
-            self.alpha = alpha
+        self.target_entropy = - \
+            torch.prod(torch.Tensor(
+                self.env.action_space[0].shape).to(self.device)).item()
+        self.log_alpha = torch.zeros(
+            1, requires_grad=True, device=self.device)
+        self.alpha = self.log_alpha.exp().item()
+        self.a_optimizer = optim.Adam([self.log_alpha], lr=self.q_lr)
 
         self.rb = ReplayBuffer(
-            buffer_size,
+            self.buffer_size,
             self.env.observation_space,
             gym.spaces.Box(-1, 1, self.action_shape, dtype=np.float32),
             self.device,
@@ -263,8 +247,6 @@ class SAC:
 
     def train(self):
         start_time = time.time()
-        avg_reward = 0
-        moving_avg = 0
 
         # TRY NOT TO MODIFY: start the game
         obs = self.env.reset()
@@ -285,13 +267,11 @@ class SAC:
                     action, self.min_action, self.max_action)
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, termination, truncation, info = self.env.step(step_action)
+            next_obs, reward, termination, truncation, info = self.env.step(
+                step_action)
 
-            avg_reward += reward
-            moving_avg = 0.99 * moving_avg + 0.01 * reward
-
-            self.writer.add_scalar("avg_reward", avg_reward, global_step)
-            self.writer.add_scalar("moving_avg", moving_avg, global_step)
+            self.collector.collect("reward", reward)
+            self.collector.collect("moving_avg", reward)
 
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
             self.rb.add(obs, next_obs, action, reward, termination, info)
@@ -364,25 +344,20 @@ class SAC:
                             self.tau * param.data + (1 - self.tau) * target_param.data)
 
                 if global_step % 100 == 0:
-                    self.writer.add_scalar("losses/qf1_values",
-                                           qf1_a_values.mean().item(), global_step)
-                    self.writer.add_scalar("losses/qf2_values",
-                                           qf2_a_values.mean().item(), global_step)
-                    self.writer.add_scalar(
-                        "losses/qf1_loss", qf1_loss.item(), global_step)
-                    self.writer.add_scalar(
-                        "losses/qf2_loss", qf2_loss.item(), global_step)
-                    self.writer.add_scalar("losses/qf_loss",
-                                           qf_loss.item() / 2.0, global_step)
-                    self.writer.add_scalar("losses/actor_loss",
-                                           actor_loss.item(), global_step)
-                    self.writer.add_scalar("losses/alpha", alpha, global_step)
+                    self.collector.collect(
+                        "qf1_values", qf1_a_values.mean().item())
+                    self.collector.collect(
+                        "qf2_values", qf2_a_values.mean().item())
+                    self.collector.collect("qf1_loss", qf1_loss.item())
+                    self.collector.collect("qf2_loss", qf2_loss.item())
+                    self.collector.collect("qf_loss", qf_loss.item() / 2.0)
+                    self.collector.collect("actor_loss", actor_loss.item())
+                    self.collector.collect("alpha", alpha)
+                    self.collector.collect("alpha_loss", alpha_loss.item())
+
                     print("SPS:", int(global_step / (time.time() - start_time)))
-                    self.writer.add_scalar("charts/SPS", int(global_step /
-                                                             (time.time() - start_time)), global_step)
-                    if self.autotune:
-                        self.writer.add_scalar("losses/alpha_loss",
-                                               alpha_loss.item(), global_step)
+                    self.collector.collect("SPS", int(global_step /
+                                                      (time.time() - start_time)))
 
         return torch.Tensor(next_obs).to(self.device)
 
@@ -412,8 +387,25 @@ class SAC:
 
                 obs = torch.Tensor(next_obs).to(self.device)
 
-        print(f'Average reward from evaluation: {eval_avg_reward}')
-        print(f'Exp. moving reward from evaluation: {eval_mov_average}')
+                self.collector.collect("eval_reward", reward)
+                self.collector.collect("eval_moving_avg", reward)
 
-        self.env.close()
-        self.writer.close()
+        return eval_avg_reward, eval_mov_average
+
+    @staticmethod
+    def collector_init(config):
+        config['qf1_values'] = Identity()
+        config['qf2_values'] = Identity()
+        config['qf1_loss'] = Identity()
+        config['qf2_loss'] = Identity()
+        config['actor_loss'] = Identity()
+        config['alpha'] = Identity()
+        config['alpha_loss'] = Identity()
+
+        return Collector(config)
+    
+    def save_collector(self, exp, save_path):
+        from PyExpUtils.results.sqlite import saveCollector
+        
+        self.collector.reset()
+        saveCollector(exp, self.collector, base=save_path)

@@ -1,101 +1,100 @@
 import random
 import time
 import os
-from dataclasses import dataclass
+# import sys
+# sys.path.append(os.getcwd())
 
 import numpy as np
 import torch
-import tyro
+import argparse
+import logging
+import json
+import socket
 
-from src.algorithms.SAC import SAC
-from src.algorithms.PPO import PPO
-
-
-@dataclass
-class Args:
-    exp_name: str = os.path.basename(__file__)[: -len(".py")]
-    seed: int = 0
-    torch_deterministic: bool = True
-    cuda: bool = False
-    track: bool = False
-    wandb_project_name: str = "Agar-PPO"
-    wandb_entity: str = None
-    render: bool = True
-    hybrid: bool = False
-    total_timesteps: int = 1000
-    eval_timesteps: int = 3000
+# saving the results of the experiment
+from PyExpUtils.results.sqlite import saveCollector
+from PyExpUtils.collection.Sampler import MovingAverage, Subsample, Identity
+from PyExpUtils.collection.utils import Pipe
+from src.experiment import ExperimentModel
+from src.experiment.RLAgent import RLAgent
 
 
-default_config = {
-    'ticks_per_step':  1,
-    'num_frames':      1,
-    'arena_size':      500,
-    'num_pellets':     500,
-    'num_viruses':     20,
-    'num_bots':        10,
-    'pellet_regen':    True,
-    'grid_size':       32,
-    'screen_len': 512,
-    'observe_cells':   False,
-    'observe_others':  True,
-    'observe_viruses': True,
-    'observe_pellets': True,
-    'obs_type': "screen",  # Two options: screen, grid
-    'render_mode': "rgb_array", # Two options: human, rgb_array
-    'allow_respawn': True,  # If False, the game will end when the player is eaten
-    # Two options: "mass:reward=mass", "diff = reward=mass(t)-mass(t-1)"
-    'reward_type': 1,
-    'c_death': -100,  # reward = [diff or mass] - c_death if player is eaten
-    'video_path': "screen_video.mp4" # for render_mode: rgb_array
-}
+# ------------------
+# -- Command Args --
+# ------------------
+parser = argparse.ArgumentParser()
+parser.add_argument('-e', '--exp', type=str, required=True)
+parser.add_argument('-i', '--idxs', nargs='+', type=int, required=True)
+parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}/')
+parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/')
+parser.add_argument('--silent', action='store_true', default=False)
+parser.add_argument('--render', action='store_true', default=False)
+parser.add_argument('--track', action='store_true', default=False)
+parser.add_argument('--gpu', action='store_true', default=False)
 
-args = tyro.cli(Args)
-run_name = f"{args.exp_name}__{args.seed}__{int(time.time())}"
+args = parser.parse_args()
 
-# seeding
-random.seed(args.seed)
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-torch.backends.cudnn.deterministic = args.torch_deterministic
+env_config = json.load(open('env_config.json', 'r'))
+device = torch.device("cuda" if torch.cuda.is_available()
+                      and args.gpu else "cpu")
 
-if args.track:
-    import wandb
-    wandb.init(
-        project=args.wandb_project_name,
-        entity=args.wandb_entity,
-        sync_tensorboard=True,
-        config=vars(args),
-        name=run_name,
-        monitor_gym=True,
-        save_code=True,
-    )
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger('exp')
+prod = 'cdr' in socket.gethostname() or args.silent
+if not prod:
+    logger.setLevel(logging.DEBUG)
 
+# ----------------------
+# -- Experiment Def'n --
+# ----------------------
+exp = ExperimentModel.load(args.exp)
+indices = args.idxs
 
-rl_alg = PPO(
-    total_timesteps=args.total_timesteps,
-    eval_timesteps=args.eval_timesteps,
-    env_name="agario-screen-v0",
-    env_config=default_config,
-    run_name=run_name,
-    cuda=args.cuda,
-    hybrid=args.hybrid,
-    render=args.render,
-    anneal_lr=True,
-    num_envs=1,
-    num_steps=2048,
-    learning_rate=3e-4,
-    gamma=0.99,
-    gae_lambda=0.95,
-    num_minibatches=32,
-    update_epochs=10,
-    norm_adv=True,
-    clip_coef=0.2,
-    clip_vloss=True,
-    ent_coef=0.0,
-    vf_coef=0.5,
-    max_grad_norm=0.5,
-    target_kl=None
-)
+for idx in indices:
+    collector_config = {
+        'SPS': Identity(),
+        'reward': Identity(),
+        'moving_avg': Pipe(
+            MovingAverage(0.999),
+            Subsample(500),
+        ),
+        'eval_reward': Identity(),
+        'eval_moving_avg': Pipe(
+            MovingAverage(0.999),
+            Subsample(500),
+        ),
+    }
 
-last_obs = rl_alg.train()
-rl_alg.eval(last_obs)
+    run = exp.getRun(idx)
+
+    # set random seeds accordingly
+    random.seed(idx)
+    np.random.seed(idx)
+    torch.manual_seed(idx)
+    torch.backends.cudnn.deterministic = True
+
+    if args.track:
+        import wandb
+        wandb.init(
+            project=exp.name,
+            sync_tensorboard=True,
+            config=vars(args),
+            name=f'{exp.name}-{idx}',
+            monitor_gym=True,
+            save_code=True,
+        )
+
+    # Run the experiment
+    start_time = time.time()
+
+    rl_agent = RLAgent(exp, idx, env_config=env_config,  device=device,
+                       collector_config=collector_config, render=args.render)
+
+    last_obs = rl_agent.train()
+    eval_avg_reward, eval_mov_average  = rl_agent.eval(last_obs)
+
+    print(f'Run {idx} took {time.time() - start_time:.2f}s')
+    print(f'Eval Avg Reward: {eval_avg_reward:.2f}')
+    print(f'Eval Moving Avg Reward: {eval_mov_average:.2f}')
+    
+    rl_agent.save_collector(exp, args.save_path)

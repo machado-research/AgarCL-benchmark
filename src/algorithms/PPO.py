@@ -1,7 +1,6 @@
 import gymnasium as gym
+
 import time
-# import gym
-import gym_agario
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,21 +11,8 @@ import torch.optim as optim
 
 from src.wrappers.gym import *
 from src.utils import modify_action, modify_hybrid_action
-
-
-def make_env(env_name, config, gamma):
-    env = gym.make(env_name, **config)
-    # deal with dm_control's Dict observation space
-    env = FlattenObservation(env)
-    env = NormalizeObservation(env)
-    # env = TransformObservation(
-        # env, lambda obs: np.clip(obs, -10, 10))
-    env = NormalizeReward(env, gamma=gamma)
-    env = TransformReward(
-        env, lambda reward: np.clip(reward, -10, 10))
-    if config['render_mode'] == "rgb_array":
-        env = VideoRecorderWrapper(env, config['video_path'])
-    return env
+from PyExpUtils.collection.Collector import Collector
+from PyExpUtils.collection.Sampler import Identity
 
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -141,64 +127,48 @@ class HybridAgent(nn.Module):
 
 class PPO:
     def __init__(self,
-                 run_name: str,
-                 env_config: dict,
+                 env: gym.Env,
+                 seed: int,
+                 device: str,
+                 hypers: dict,
+                 collector_config: dict,
                  total_timesteps: int = 1e6,
                  eval_timesteps: int = 3000,
-                 env_name: str = "agario-grid-v0",
-                 cuda: bool = False,
-                 hybrid: bool = False,
                  render: bool = False,
-                 anneal_lr: bool = True,
-                 num_envs: int = 1,
-                 num_steps: int = 2048,
-                 learning_rate: float = 3e-4,
-                 gamma: float = 0.99,
-                 gae_lambda: float = 0.95,
-                 num_minibatches: int = 32,
-                 update_epochs: int = 10,
-                 norm_adv: bool = True,
-                 clip_coef: float = 0.2,
-                 clip_vloss: bool = True,
-                 ent_coef: float = 0.0,
-                 vf_coef: float = 0.5,
-                 max_grad_norm: float = 0.5,
-                 target_kl: float = None
                  ) -> None:
 
-        self.env = make_env(env_name, env_config,  gamma)
-
-        self.writer = SummaryWriter(f"runs/{run_name}")
-        self.cuda = cuda
-        self.hybrid = hybrid
+        self.env = env
         self.render = render
         self.total_timesteps = total_timesteps
         self.eval_timesteps = eval_timesteps
+        self.num_envs = 1
+        
+        self.collector = self.collector_init(collector_config)
+        self.collector.setIdx(seed)
 
-        self.num_envs = num_envs
-        self.num_steps = num_steps
-        self.anneal_lr = anneal_lr
-        self.learning_rate = learning_rate
-        self.gamma = gamma
-        self.gae_lambda = gae_lambda
-        self.num_minibatches = num_minibatches
-        self.update_epochs = update_epochs
-        self.norm_adv = norm_adv
-        self.clip_coef = clip_coef
-        self.clip_vloss = clip_vloss
-        self.ent_coef = ent_coef
-        self.vf_coef = vf_coef
-        self.max_grad_norm = max_grad_norm
-        self.target_kl = target_kl
+        # Hyperparameters
+        self.hybrid = hypers['hybrid']
+        self.num_steps = hypers['num_steps']
+        self.anneal_lr = hypers['anneal_lr']
+        self.learning_rate = hypers['learning_rate']
+        self.gamma = hypers['gamma']
+        self.gae_lambda = hypers['gae_lambda']
+        self.num_minibatches = hypers['num_minibatches']
+        self.update_epochs = hypers['update_epochs']
+        self.norm_adv = hypers['norm_adv']
+        self.clip_coef = hypers['clip_coef']
+        self.clip_vloss = hypers['clip_vloss']
+        self.ent_coef = hypers['ent_coef']
+        self.vf_coef = hypers['vf_coef']
+        self.max_grad_norm = hypers['max_grad_norm']
+        self.target_kl = hypers.get('target_kl', None)
 
         # to be filled in runtime
         self.batch_size = int(self.num_envs * self.num_steps)
         self.minibatch_size = int(self.batch_size // self.num_minibatches)
         self.num_iterations = self.total_timesteps // self.batch_size
 
-        self.device = torch.device("cuda" if torch.cuda.is_available()
-                                   and self.cuda else "cpu")
-
+        self.device = device
         self.env.action_space = (gym.spaces.Box(-1, 1, self.env.action_space[0].shape, dtype=np.float32),
                                  gym.spaces.Discrete(3))
 
@@ -237,16 +207,12 @@ class PPO:
 
     def train(self):
         global_step = 0
-        avg_reward = 0
-        moving_avg = 0
 
         start_time = time.time()
         next_obs = self.env.reset()
         next_obs = torch.Tensor(next_obs).to(self.device)
         next_done = torch.zeros(self.num_envs).to(self.device)
-        
-        import pdb; pdb.set_trace()
-        
+
         for iteration in range(1, self.num_iterations + 1):
             # Annealing the rate if instructed to do so.
             if self.anneal_lr:
@@ -285,11 +251,8 @@ class PPO:
                 next_obs, next_done = torch.Tensor(next_obs).to(
                     self.device), torch.Tensor(next_done).to(self.device)
 
-                avg_reward += reward
-                moving_avg = 0.99 * moving_avg + 0.01 * reward
-
-                self.writer.add_scalar("avg_reward", avg_reward, global_step)
-                self.writer.add_scalar("moving_avg", moving_avg, global_step)
+                self.collector.collect("reward", reward)
+                self.collector.collect("moving_avg", reward)
 
             # bootstrap value if not done
             with torch.no_grad():
@@ -385,25 +348,18 @@ class PPO:
                 np.var(y_true - y_pred) / var_y
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
-            self.writer.add_scalar("charts/learning_rate",
-                                   self.optimizer.param_groups[0]["lr"], global_step)
-            self.writer.add_scalar("losses/value_loss",
-                                   v_loss.item(), global_step)
-            self.writer.add_scalar("losses/policy_loss",
-                                   pg_loss.item(), global_step)
-            self.writer.add_scalar(
-                "losses/entropy", entropy_loss.item(), global_step)
-            self.writer.add_scalar("losses/old_approx_kl",
-                                   old_approx_kl.item(), global_step)
-            self.writer.add_scalar(
-                "losses/approx_kl", approx_kl.item(), global_step)
-            self.writer.add_scalar(
-                "losses/clipfrac", np.mean(clipfracs), global_step)
-            self.writer.add_scalar(
-                "losses/explained_variance", explained_var, global_step)
+            self.collector.collect("lr", self.optimizer.param_groups[0]["lr"])
+            self.collector.collect("value_loss", v_loss.item())
+            self.collector.collect("policy_loss", pg_loss.item())
+            self.collector.collect("entropy_loss", entropy_loss.item())
+            self.collector.collect("old_approx_kl", old_approx_kl.item())
+            self.collector.collect("approx_kl", approx_kl.item())
+            self.collector.collect("clipfrac", np.mean(clipfracs))
+            self.collector.collect("explained_variance", explained_var)
+
             print("SPS:", int(global_step / (time.time() - start_time)))
-            self.writer.add_scalar("charts/SPS", int(global_step /
-                                                     (time.time() - start_time)), global_step)
+            self.collector.collect("SPS", int(
+                global_step / (time.time() - start_time)))
 
         return torch.Tensor(next_obs).to(self.device)
 
@@ -426,15 +382,33 @@ class PPO:
                     step_action)
 
                 eval_avg_reward += reward
-                eval_mov_average = 0.99 * eval_mov_average + 0.01 * reward
+                eval_mov_average = 0.999 * eval_mov_average + 0.001 * reward
 
                 if self.render:
                     self.env.render()
 
                 obs = torch.Tensor(next_obs).to(self.device)
+                
+                self.collector.collect("eval_reward", reward)
+                self.collector.collect("eval_moving_avg", reward)
 
-        print(f'Average reward from evaluation: {eval_avg_reward}')
-        print(f'Exp. moving reward from evaluation: {eval_mov_average}')
+        return eval_avg_reward, eval_mov_average    
 
-        self.env.close()
-        self.writer.close()
+    @staticmethod
+    def collector_init(config):
+        config['lr'] = Identity()
+        config['value_loss'] = Identity()
+        config['policy_loss'] = Identity()
+        config['entropy_loss'] = Identity()
+        config['old_approx_kl'] = Identity()
+        config['approx_kl'] = Identity()
+        config['clipfrac'] = Identity()
+        config['explained_variance'] = Identity()
+
+        return Collector(config)
+    
+    def save_collector(self, exp, save_path):
+        from PyExpUtils.results.sqlite import saveCollector
+        
+        self.collector.reset()
+        saveCollector(exp, self.collector, base=save_path)

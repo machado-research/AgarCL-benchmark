@@ -1,0 +1,21 @@
+{
+    "ticks_per_step": 1,
+    "num_frames": 1,
+    "arena_size": 500,
+    "num_pellets": 500,
+    "num_viruses": 20,
+    "num_bots": 10,
+    "pellet_regen": true,
+    "grid_size": 32,
+    "screen_len": 8,
+    "observe_cells": false,
+    "observe_others": true,
+    "observe_viruses": true,
+    "observe_pellets": true,
+    "obs_type": "screen",
+    "render_mode": "rgb_array",
+    "allow_respawn": true,
+    "reward_type": 1,
+    "c_death": -100,
+    "video_path": "screen_video.mp4"
+}
