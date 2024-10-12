@@ -6,3 +6,4 @@ gymnasium==0.29.1
 imageio==2.35.1
 imageio-ffmpeg==0.5.1
 tqdm==4.66.5
+PyExpUtils-andnp~=7.0
