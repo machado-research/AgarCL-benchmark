@@ -1,8 +1,6 @@
 import random
 import time
 import os
-# import sys
-# sys.path.append(os.getcwd())
 
 import numpy as np
 import torch
@@ -12,7 +10,6 @@ import json
 import socket
 
 # saving the results of the experiment
-from PyExpUtils.results.sqlite import saveCollector
 from PyExpUtils.collection.Sampler import MovingAverage, Subsample, Identity
 from PyExpUtils.collection.utils import Pipe
 from src.experiment import ExperimentModel

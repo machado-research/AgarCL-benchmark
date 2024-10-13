@@ -1,7 +1,7 @@
 {
     "agent": "SAC",
-    "total_steps": 3000,
-    "eval_steps": 1000,
+    "total_steps": 100000,
+    "eval_steps": 10000,
     "env_name": "agario-screen-v0",
     
     "metaParameters": {
@@ -18,6 +18,6 @@
         "hidden_size": 256,
         "norm_obs": false,
         "norm_reward": false,
-        "hybrid": true
+        "hybrid": false
     }
 }

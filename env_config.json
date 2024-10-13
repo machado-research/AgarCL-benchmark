@@ -7,7 +7,7 @@
     "num_bots": 10,
     "pellet_regen": true,
     "grid_size": 32,
-    "screen_len": 8,
+    "screen_len": 64,
     "observe_cells": false,
     "observe_others": true,
     "observe_viruses": true,

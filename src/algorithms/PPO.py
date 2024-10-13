@@ -4,125 +4,14 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.distributions.normal import Normal
-from torch.distributions.categorical import Categorical
-from torch.utils.tensorboard import SummaryWriter
 import torch.optim as optim
 
-from src.wrappers.gym import *
-from src.utils import modify_action, modify_hybrid_action
 from PyExpUtils.collection.Collector import Collector
 from PyExpUtils.collection.Sampler import Identity
 
-
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
-    torch.nn.init.orthogonal_(layer.weight, std)
-    torch.nn.init.constant_(layer.bias, bias_const)
-    return layer
-
-
-class Agent(nn.Module):
-    def __init__(self, obs_shape, action_shape):
-        super().__init__()
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
-        )
-        self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, np.prod(action_shape)), std=0.01),
-        )
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(action_shape)))
-        self.action_dim = action_shape[0]
-
-    def get_value(self, x):
-        return self.critic(x)
-
-    def get_action_and_value(self, x, action=None, action_limits=None):
-        action_mean = self.actor_mean(x).reshape(-1, self.action_dim)
-        action_logstd = self.actor_logstd.expand_as(action_mean)
-        action_std = torch.exp(action_logstd)
-        probs = Normal(action_mean, action_std)
-        if action is None:
-            action = probs.sample()
-        if action_limits:
-            action = np.clip(action, action_limits[0], action_limits[1])
-
-        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
-
-
-class HybridAgent(nn.Module):
-    def __init__(self, obs_shape, cont_action_shape, dis_action_shape):
-        super().__init__()
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
-        )
-        self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, np.prod(cont_action_shape)), std=0.01),
-        )
-        self.actor_logstd = nn.Parameter(
-            torch.zeros(1, np.prod(cont_action_shape)))
-        self.action_dim = cont_action_shape
-
-        self.dis_actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, dis_action_shape), std=0.01),
-        )
-
-    def get_value(self, x):
-        return self.critic(x)
-
-    def get_action_and_value(self, x, action=None, action_limits=None):
-        action_mean = self.actor_mean(x).reshape(-1, self.action_dim)
-        action_logstd = self.actor_logstd.expand_as(action_mean)
-        action_std = torch.exp(action_logstd)
-        cont_probs = Normal(action_mean, action_std)
-
-        disc_action_mean = self.dis_actor_mean(x)
-        disc_probs = Categorical(logits=disc_action_mean)
-
-        if action is None:
-            cont_action = cont_probs.sample()
-            dis_action = disc_probs.sample((1, 1))
-        else:
-            cont_action, dis_action = action[:, :-1], action[:, -1]
-
-        if action_limits:
-            cont_action = np.clip(
-                cont_action, action_limits[0], action_limits[1])
-
-        cont_action_log_prob = cont_probs.log_prob(
-            cont_action).sum(-1, keepdim=True)
-        cont_action_entropy = cont_probs.entropy().sum(-1, keepdim=True)
-
-        dis_action_log_prob = disc_probs.log_prob(
-            dis_action).sum(-1, keepdim=True)
-        dis_action_entropy = disc_probs.entropy().sum(-1, keepdim=True)
-
-        if action is None:
-            action = torch.cat([cont_action, dis_action], 1)
-
-        log_prob = cont_action_log_prob + dis_action_log_prob
-        entropy = cont_action_entropy + dis_action_entropy
-
-        return action, log_prob, entropy, self.critic(x)
+from src.wrappers.gym import *
+from src.utils.actions import modify_action, modify_hybrid_action
+from src.utils.ppo_networks import *
 
 
 class PPO:
@@ -142,7 +31,7 @@ class PPO:
         self.total_timesteps = total_timesteps
         self.eval_timesteps = eval_timesteps
         self.num_envs = 1
-        
+
         self.collector = self.collector_init(collector_config)
         self.collector.setIdx(seed)
 
@@ -176,7 +65,7 @@ class PPO:
         self.max_action = float(self.env.action_space[0].high[0])
         self.min_action = float(self.env.action_space[0].low[0])
         self.action_shape = (self.env.action_space[0].shape[0] + 1,)
-        self.obs_shape = (np.prod(self.env.observation_space.shape),)
+        self.obs_shape = self.env.observation_space.shape
         self.env.observation_space.dtype = np.float32
 
         if self.hybrid:
@@ -185,8 +74,12 @@ class PPO:
             self.agent = HybridAgent(
                 self.obs_shape, cont_action_shape, dis_action_shape).to(self.device)
         else:
-            self.agent = Agent(
-                self.obs_shape, self.action_shape).to(self.device)
+            if len(self.obs_shape) > 1:
+                self.agent = CNNAgent(
+                    self.obs_shape, self.action_shape).to(self.device)
+            else:
+                self.agent = Agent(
+                    self.obs_shape, self.action_shape).to(self.device)
 
         self.optimizer = optim.Adam(
             self.agent.parameters(), lr=self.learning_rate, eps=1e-5)
@@ -388,11 +281,11 @@ class PPO:
                     self.env.render()
 
                 obs = torch.Tensor(next_obs).to(self.device)
-                
+
                 self.collector.collect("eval_reward", reward)
                 self.collector.collect("eval_moving_avg", reward)
 
-        return eval_avg_reward, eval_mov_average    
+        return eval_avg_reward, eval_mov_average
 
     @staticmethod
     def collector_init(config):
@@ -406,9 +299,9 @@ class PPO:
         config['explained_variance'] = Identity()
 
         return Collector(config)
-    
+
     def save_collector(self, exp, save_path):
         from PyExpUtils.results.sqlite import saveCollector
-        
+
         self.collector.reset()
         saveCollector(exp, self.collector, base=save_path)
