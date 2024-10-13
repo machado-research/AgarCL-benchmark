@@ -31,6 +31,8 @@ class PPO:
         self.total_timesteps = total_timesteps
         self.eval_timesteps = eval_timesteps
         self.num_envs = 1
+        
+        self.loaded_obs = None
 
         self.collector = self.collector_init(collector_config)
         self.collector.setIdx(seed)
@@ -102,7 +104,7 @@ class PPO:
         global_step = 0
 
         start_time = time.time()
-        next_obs = self.env.reset()
+        next_obs = self.env.reset() if self.loaded_obs is None else self.loaded_obs
         next_obs = torch.Tensor(next_obs).to(self.device)
         next_done = torch.zeros(self.num_envs).to(self.device)
 
@@ -305,3 +307,18 @@ class PPO:
 
         self.collector.reset()
         saveCollector(exp, self.collector, base=save_path)
+
+    def get_state_dict(self):
+        return {
+            'agent': self.agent.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'last_obs': self.obs[-1],
+            'timestep': self.total_timesteps,
+        } #, self.env
+        
+    def set_state_dict(self, state_dict, env=None):
+        self.agent.load_state_dict(state_dict['agent'])
+        self.optimizer.load_state_dict(state_dict['optimizer'])
+        self.loaded_obs = state_dict['last_obs']
+        self.total_timesteps = state_dict['timestep']
+        # self.env = env

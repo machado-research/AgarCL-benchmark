@@ -1,5 +1,7 @@
 from src.wrappers.gym import make_env
 from importlib import import_module
+from src.utils.mis import save_checkpoint_env, load_checkpoint_env
+
 
 def get_agent(name):
     if name == 'SAC':
@@ -40,3 +42,12 @@ class RLAgent:
 
     def save_collector(self, exp, save_path):
         self.agent.save_collector(exp, save_path)
+        
+    def save_checkpoint(self, checkpoint_path):
+        state_dict= self.agent.get_state_dict()
+        save_checkpoint_env(state_dict, checkpoint_path)
+        
+    def load_checkpoint(self, checkpoint_path):
+        state_dict = load_checkpoint_env(checkpoint_path)
+        self.agent.set_state_dict(state_dict)
+        

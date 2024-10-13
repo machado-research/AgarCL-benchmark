@@ -1,4 +1,5 @@
 # ignore all results folders
+checkpoints/
 results/
 results-*/
 plots/

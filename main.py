@@ -15,7 +15,6 @@ from PyExpUtils.collection.utils import Pipe
 from src.experiment import ExperimentModel
 from src.experiment.RLAgent import RLAgent
 
-
 # ------------------
 # -- Command Args --
 # ------------------
@@ -23,7 +22,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-e', '--exp', type=str, required=True)
 parser.add_argument('-i', '--idxs', nargs='+', type=int, required=True)
 parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}/')
-parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/')
+parser.add_argument('--checkpoint_path', type=str, default=f'{os.getcwd()}/checkpoints/')
 parser.add_argument('--silent', action='store_true', default=False)
 parser.add_argument('--render', action='store_true', default=False)
 parser.add_argument('--track', action='store_true', default=False)
@@ -48,6 +47,7 @@ exp = ExperimentModel.load(args.exp)
 indices = args.idxs
 
 for idx in indices:
+    checkpoint_path = f'{args.checkpoint_path}/{exp.name}-{idx}.pt'
     collector_config = {
         'SPS': Identity(),
         'reward': Identity(),
@@ -87,11 +87,17 @@ for idx in indices:
     rl_agent = RLAgent(exp, idx, env_config=env_config,  device=device,
                        collector_config=collector_config, render=args.render)
 
-    last_obs = rl_agent.train()
-    eval_avg_reward, eval_mov_average  = rl_agent.eval(last_obs)
+    if os.path.exists(checkpoint_path):
+        rl_agent.load_checkpoint(checkpoint_path)
 
-    print(f'Run {idx} took {time.time() - start_time:.2f}s')
-    print(f'Eval Avg Reward: {eval_avg_reward:.2f}')
-    print(f'Eval Moving Avg Reward: {eval_mov_average:.2f}')
-    
-    rl_agent.save_collector(exp, args.save_path)
+    try:
+        last_obs = rl_agent.train()
+        eval_avg_reward, eval_mov_average = rl_agent.eval(last_obs)
+
+        print(f'Run {idx} took {time.time() - start_time:.2f}s')
+        print(f'Eval Avg Reward: {eval_avg_reward:.2f}')
+        print(f'Eval Moving Avg Reward: {eval_mov_average:.2f}')
+
+    except KeyboardInterrupt:
+        rl_agent.save_collector(exp, args.save_path)
+        rl_agent.save_checkpoint(checkpoint_path)
