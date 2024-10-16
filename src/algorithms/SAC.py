@@ -212,6 +212,7 @@ class SAC:
                             self.tau * param.data + (1 - self.tau) * target_param.data)
 
                 if global_step % 100 == 0:
+                    self.collector.next_frame()
                     self.collector.collect(
                         "qf1_values", qf1_a_values.mean().item())
                     self.collector.collect(

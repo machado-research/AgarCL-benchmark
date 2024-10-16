@@ -241,6 +241,7 @@ class PPO:
                 np.var(y_true - y_pred) / var_y
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
+            self.collector.next_frame()
             self.collector.collect("lr", self.optimizer.param_groups[0]["lr"])
             self.collector.collect("value_loss", v_loss.item())
             self.collector.collect("policy_loss", pg_loss.item())
