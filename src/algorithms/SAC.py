@@ -40,6 +40,7 @@ class SAC:
         self.q_lr = hypers['q_lr']
         self.policy_lr = hypers['policy_lr']
         self.buffer_size = int(hypers['buffer_size'])
+        self.hidden_dim = hypers['hidden_size']
         self.learning_starts = int(hypers['learning_starts'])
         self.batch_size = hypers['batch_size']
         self.policy_frequency = hypers['policy_frequency']
@@ -65,7 +66,7 @@ class SAC:
         else:
             if len(self.obs_shape) > 1:
                 self.actor = CNNActor(self.action_shape, self.obs_shape,
-                                   self.min_action, self.max_action).to(self.device)
+                                   self.min_action, self.max_action, self.hidden_dim).to(self.device)
             else:
                 self.actor = Actor(self.action_shape, self.obs_shape,
                                    self.min_action, self.max_action).to(self.device)
@@ -211,7 +212,7 @@ class SAC:
                         target_param.data.copy_(
                             self.tau * param.data + (1 - self.tau) * target_param.data)
 
-                if global_step % 100 == 0:
+                if global_step % 2000 == 0:
                     self.collector.next_frame()
                     self.collector.collect(
                         "qf1_values", qf1_a_values.mean().item())

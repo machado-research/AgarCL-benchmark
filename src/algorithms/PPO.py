@@ -50,6 +50,7 @@ class PPO:
         self.ent_coef = hypers['ent_coef']
         self.vf_coef = hypers['vf_coef']
         self.max_grad_norm = hypers['max_grad_norm']
+        self.hidden_dim = hypers['hidden_size']
         self.target_kl = hypers.get('target_kl', None)
 
         # to be filled in runtime
@@ -76,7 +77,7 @@ class PPO:
         else:
             if len(self.obs_shape) > 1:
                 self.agent = CNNAgent(
-                    self.obs_shape, self.action_shape).to(self.device)
+                    self.obs_shape, self.action_shape, self.hidden_dim).to(self.device)
             else:
                 self.agent = Agent(
                     self.obs_shape, self.action_shape).to(self.device)
@@ -251,7 +252,7 @@ class PPO:
             self.collector.collect("clipfrac", np.mean(clipfracs))
             self.collector.collect("explained_variance", explained_var)
 
-            print("SPS:", int(global_step / (time.time() - start_time)))
+            print("SPS:", int(global_step / (time.time() - start_time)), global_step)
             self.collector.collect("SPS", int(
                 global_step / (time.time() - start_time)))
 

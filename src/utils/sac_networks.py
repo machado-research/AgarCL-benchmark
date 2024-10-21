@@ -8,15 +8,18 @@ from src.utils.mis import preprocess_image_observation
 LOG_STD_MAX = 2
 LOG_STD_MIN = -5
 
-
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
 
 class SoftQNetwork(nn.Module):
-    def __init__(self, observation_shape, action_shape):
+    def __init__(self, observation_shape, action_shape, hidden_dim=256):
         super().__init__()
         self.fc1 = nn.Linear(np.array(observation_shape).prod(
-        ) + np.prod(action_shape), 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 1)
+        ) + np.prod(action_shape), hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, 1)
 
     def forward(self, x, a):
         x = torch.cat([x, a], 1)
@@ -26,7 +29,7 @@ class SoftQNetwork(nn.Module):
         return x
 
 class CNNSoftQNetwork(nn.Module):
-    def __init__(self, obs_shape, action_shape):
+    def __init__(self, obs_shape, action_shape, hidden_dim=256):
         super().__init__()
         
         # Assuming observation_shape is (C, H, W) for channels, height, width
@@ -47,9 +50,8 @@ class CNNSoftQNetwork(nn.Module):
             conv_out = self.conv_layers(sample_input)
             conv_out_size = conv_out.size(1)
         
-        self.fc1 = nn.Linear(conv_out_size + np.prod(action_shape), 256)
-        # self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 1)
+        self.fc1 = nn.Linear(conv_out_size + np.prod(action_shape), hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, 1)
 
     def forward(self, x, a):
         x = preprocess_image_observation(x)
@@ -57,19 +59,18 @@ class CNNSoftQNetwork(nn.Module):
         x = self.conv_layers(x)
         x = torch.cat([x, a], 1)
         x = F.relu(self.fc1(x))
-        # x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
 
 class Actor(nn.Module):
-    def __init__(self, action_shape, observation_shape, action_low, action_high):
+    def __init__(self, action_shape, observation_shape, action_low, action_high, hidden_dim=256):
         super().__init__()
         self.fc1 = nn.Linear(
-            np.array(observation_shape).prod(), 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc_mean = nn.Linear(256, np.prod(action_shape))
-        self.fc_logstd = nn.Linear(256, np.prod(action_shape))
+            np.array(observation_shape).prod(), hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_mean = nn.Linear(hidden_dim, np.prod(action_shape))
+        self.fc_logstd = nn.Linear(hidden_dim, np.prod(action_shape))
         # action rescaling
         self.register_buffer(
             "action_scale", torch.tensor(
@@ -110,16 +111,16 @@ class Actor(nn.Module):
         return action, log_prob, mean
 
 class CNNActor(nn.Module):
-    def __init__(self, action_shape, obs_shape, action_low, action_high):
+    def __init__(self, action_shape, obs_shape, action_low, action_high, hidden_dim=256):
         super().__init__()
         
         # Assuming observation_shape is (C, H, W) for channels, height, width
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=8, stride=4),
+            layer_init(nn.Conv2d(3, 32, kernel_size=8, stride=4)),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            layer_init(nn.Conv2d(32, 64, kernel_size=4, stride=2)),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            layer_init(nn.Conv2d(64, 64, kernel_size=3, stride=1)),
             nn.ReLU(),
             nn.Flatten()
         )
@@ -131,10 +132,9 @@ class CNNActor(nn.Module):
             conv_out = self.conv_layers(sample_input)
             conv_out_size = conv_out.size(1)
         
-        self.fc1 = nn.Linear(conv_out_size, 256)
-        # self.fc2 = nn.Linear(256, 256)
-        self.fc_mean = nn.Linear(256, np.prod(action_shape))
-        self.fc_logstd = nn.Linear(256, np.prod(action_shape))
+        self.fc1 = nn.Linear(conv_out_size, hidden_dim)
+        self.fc_mean = nn.Linear(hidden_dim, np.prod(action_shape))
+        self.fc_logstd = nn.Linear(hidden_dim, np.prod(action_shape))
         
         # action rescaling
         self.register_buffer(
@@ -179,15 +179,15 @@ class CNNActor(nn.Module):
         return action, log_prob, mean
 
 class HybridActor(nn.Module):
-    def __init__(self, cont_action_shape, dis_action_shape, observation_shape, action_low, action_high):
+    def __init__(self, cont_action_shape, dis_action_shape, observation_shape, action_low, action_high, hidden_dim=256):
         super().__init__()
         self.fc1 = nn.Linear(
-            np.array(observation_shape).prod(), 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc_cont_mean = nn.Linear(256, cont_action_shape)
-        self.fc_cont_logstd = nn.Linear(256, cont_action_shape)
+            np.array(observation_shape).prod(), hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc_cont_mean = nn.Linear(hidden_dim, cont_action_shape)
+        self.fc_cont_logstd = nn.Linear(hidden_dim, cont_action_shape)
 
-        self.fc_disc_mean = nn.Linear(256, dis_action_shape)
+        self.fc_disc_mean = nn.Linear(hidden_dim, dis_action_shape)
 
         # action rescaling
         self.register_buffer(

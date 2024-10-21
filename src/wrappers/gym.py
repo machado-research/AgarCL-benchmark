@@ -11,6 +11,7 @@ from typing import Callable, Any
 def make_env(env_name, config, gamma, normalize_observation=False, normalize_reward=False):
     env = gym.make(env_name, **config)
     # deal with dm_control's Dict observation space
+    # env = FlattenObservation(env)
     if normalize_observation:
         env = NormalizeObservation(env)
 

@@ -13,7 +13,7 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
 
 
 class CNNAgent(nn.Module):
-    def __init__(self, obs_shape, action_shape):
+    def __init__(self, obs_shape, action_shape, hidden_dim=64):
         super().__init__()
         
         # Assuming obs_shape is (C, H, W) for channel, height, width
@@ -35,19 +35,21 @@ class CNNAgent(nn.Module):
             conv_out_size = conv_out.size(1)
 
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(conv_out_size, 256)),
+            layer_init(nn.Linear(conv_out_size, hidden_dim)),
             nn.ReLU(),
-            layer_init(nn.Linear(256, 1), std=1.0),
+            layer_init(nn.Linear(hidden_dim, 1), std=1.0),
         )
 
         self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(conv_out_size, 256)),
+            layer_init(nn.Linear(conv_out_size, hidden_dim)),
             nn.ReLU(),
-            layer_init(nn.Linear(256, np.prod(action_shape)), std=0.01),
+            layer_init(nn.Linear(hidden_dim, np.prod(action_shape)), std=0.01),
         )
 
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(action_shape)))
         self.action_dim = action_shape[0]
+        
+        print(f'PPO has {self.get_parameter_count()} parameters!')
 
     def get_value(self, x):
         x = preprocess_image_observation(x)
@@ -69,24 +71,27 @@ class CNNAgent(nn.Module):
             action = torch.clamp(action, action_limits[0], action_limits[1])
 
         return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(features)
+    
+    def get_parameter_count(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
 class Agent(nn.Module):
-    def __init__(self, obs_shape, action_shape):
+    def __init__(self, obs_shape, action_shape, hidden_dim=64):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
+            layer_init(nn.Linear(np.array(obs_shape).prod(), hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
+            layer_init(nn.Linear(hidden_dim, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
+            layer_init(nn.Linear(np.array(obs_shape).prod(), hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, np.prod(action_shape)), std=0.01),
+            layer_init(nn.Linear(hidden_dim, np.prod(action_shape)), std=0.01),
         )
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(action_shape)))
         self.action_dim = action_shape[0]
@@ -108,32 +113,32 @@ class Agent(nn.Module):
 
 
 class HybridAgent(nn.Module):
-    def __init__(self, obs_shape, cont_action_shape, dis_action_shape):
+    def __init__(self, obs_shape, cont_action_shape, dis_action_shape, hidden_dim=64):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
+            layer_init(nn.Linear(np.array(obs_shape).prod(), hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
+            layer_init(nn.Linear(hidden_dim, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
+            layer_init(nn.Linear(np.array(obs_shape).prod(), hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, np.prod(cont_action_shape)), std=0.01),
+            layer_init(nn.Linear(hidden_dim, np.prod(cont_action_shape)), std=0.01),
         )
         self.actor_logstd = nn.Parameter(
             torch.zeros(1, np.prod(cont_action_shape)))
         self.action_dim = cont_action_shape
 
         self.dis_actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(obs_shape).prod(), 64)),
+            layer_init(nn.Linear(np.array(obs_shape).prod(), hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
+            layer_init(nn.Linear(hidden_dim, hidden_dim)),
             nn.Tanh(),
-            layer_init(nn.Linear(64, dis_action_shape), std=0.01),
+            layer_init(nn.Linear(hidden_dim, dis_action_shape), std=0.01),
         )
 
     def get_value(self, x):

@@ -13,7 +13,7 @@
     "observe_viruses": true,
     "observe_pellets": true,
     "obs_type": "screen",
-    "render_mode": "rgb_array",
+    "render_mode": "human",
     "allow_respawn": true,
     "reward_type": 1,
     "c_death": -100,
