@@ -40,3 +40,10 @@ class RLAgent:
 
     def save_collector(self, exp, save_path):
         self.agent.save_collector(exp, save_path)
+
+    def load_checkpoint(self, path):
+        self.agent.load_checkpoint(path)
+    
+    def save_checkpoint(self, path):
+        self.agent.save_checkpoint(path)
+    

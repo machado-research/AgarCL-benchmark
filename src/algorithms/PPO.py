@@ -307,3 +307,15 @@ class PPO:
 
         self.collector.reset()
         saveCollector(exp, self.collector, base=save_path)
+
+    def load_checkpoint(self, path):
+        checkpoint = torch.load(path)
+        self.agent.load_state_dict(checkpoint['agent_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    def save_checkpoint(self, path):
+        torch.save({
+            'agent_state_dict': self.agent.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+        }, path)
+    
