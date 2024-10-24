@@ -32,8 +32,8 @@ class RLAgent:
     def train(self):
         return self.agent.train()
 
-    def eval(self, obs):
-        return self.agent.eval(obs)
+    def eval(self):
+        return self.agent.eval()
     
     def get_collector(self):
         return self.agent.collector

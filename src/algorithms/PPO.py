@@ -13,6 +13,8 @@ from src.wrappers.gym import *
 from src.utils.actions import modify_action, modify_hybrid_action
 from src.utils.ppo_networks import *
 from PIL import Image
+import os
+
 from tqdm import tqdm
 
 class PPO:
@@ -125,15 +127,16 @@ class PPO:
                     action, logprob, _, value = self.agent.get_action_and_value(
                         next_obs, action_limits=(self.min_action, self.max_action))
                     self.values[step] = value.flatten()
-
-                    # obs_image = next_obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
-                    # obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
-                    # img = Image.fromarray(obs_image)
-                    # import os
-                    # if not os.path.exists("/home/ayman/thesis/AgarLE-benchmark/observations"):
-                    #     os.makedirs("/home/ayman/thesis/AgarLE-benchmark/observations")
-                    # img.save(f"/home/ayman/thesis/AgarLE-benchmark/observations/obs_train_{global_step}.png")
-
+                    
+                #     obs_image = next_obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
+                #     obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
+                #     img = Image.fromarray(obs_image)
+                #     if not os.path.exists("/home/mamm/ayman/thesis/AgarLE-benchmark/observations"):
+                #         os.makedirs("/home/mamm/ayman/thesis/AgarLE-benchmark/observations")
+                #     img.save(f"/home/mamm/ayman/thesis/AgarLE-benchmark/observations/obs_{global_step}.png")
+                # next_obs = (next_obs - next_obs.mean()) / (next_obs.std() + 1e-8)
+                
+                
                 self.actions[step] = action
                 self.logprobs[step] = logprob
                 action = action.detach().cpu().numpy().squeeze()
@@ -143,11 +146,10 @@ class PPO:
                 else:
                     step_action = modify_action(
                         action, self.min_action, self.max_action)
-
+                # print(f"Step: {step}, Action: {step_action}, Logprob: {logprob}, Value: {value}")
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_obs, reward, termination, truncation, info = self.env.step(
                     step_action)
-
                 next_done = np.ones((1,)) * termination
                 self.rewards[step] = torch.tensor(
                     reward).to(self.device).view(-1)
@@ -234,8 +236,7 @@ class PPO:
                             ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                     entropy_loss = entropy.mean()
-                    loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef
-
+                    loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef                    
                     self.optimizer.zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(
@@ -261,28 +262,34 @@ class PPO:
             self.collector.collect("clipfrac", np.mean(clipfracs))
             self.collector.collect("explained_variance", explained_var)
 
-            print("SPS:", int(global_step / (time.time() - start_time)), global_step)
+            # print("SPS:", int(global_step / (time.time() - start_time)), global_step)
             self.collector.collect("SPS", int(
                 global_step / (time.time() - start_time)))
 
         return torch.Tensor(next_obs).to(self.device)
 
-    def eval(self, obs):
+    def eval(self):
+        obs = self.env.reset()
+        obs = torch.Tensor(obs).to(self.device)
         eval_avg_reward = 0
         eval_mov_average = 0
+        import imageio
+        import os
+        video_dir = "/home/mamm/ayman/thesis/AgarLE-benchmark"
+        video_writer = imageio.get_writer(os.path.join(video_dir, 'grid_env.mp4'), fps=60)
         for x in range(self.eval_timesteps):
             with torch.no_grad():
                 action, _, _, _ = self.agent.get_action_and_value(
                     obs, action_limits=(self.min_action, self.max_action))
                 action = action.detach().cpu().numpy().squeeze()
                 # Save the observation as an image
-                obs_image = obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
-                obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
-                img = Image.fromarray(obs_image)
-                import os
-                if not os.path.exists("/home/ayman/thesis/AgarLE-benchmark/observations"):
-                    os.makedirs("/home/ayman/thesis/AgarLE-benchmark/observations")
-                img.save(f"/home/ayman/thesis/AgarLE-benchmark/observations/obs_test_{x}.png")
+                # obs_image = obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
+                # obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
+                # img = Image.fromarray(obs_image)
+                # import os
+                # if not os.path.exists("/home/mamm/ayman/thesis/AgarLE-benchmark/observations"):
+                #     os.makedirs("/home/mamm/ayman/thesis/AgarLE-benchmark/observations")
+                # img.save(f"/home/mamm/ayman/thesis/AgarLE-benchmark/observations/obs_test_{x}.png")
 
                 if self.hybrid:
                     step_action = modify_hybrid_action(action)
@@ -297,13 +304,16 @@ class PPO:
                 eval_mov_average = 0.999 * eval_mov_average + 0.001 * reward
 
                 if self.render:
-                    self.env.render()
+                    rendered = self.env.render()
+                    for j in range(self.env.num_frames):
+                        video_writer.append_data(rendered[j])
+                    
 
                 obs = torch.Tensor(next_obs).to(self.device)
 
                 self.collector.collect("eval_reward", reward)
                 self.collector.collect("eval_moving_avg", reward)
-
+        
         return eval_avg_reward, eval_mov_average
 
     @staticmethod

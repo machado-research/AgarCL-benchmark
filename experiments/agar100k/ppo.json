@@ -1,18 +1,18 @@
 {
     "agent": "PPO",
-    "total_steps": 100000,
-    "eval_steps": 1000,
+    "total_steps": 500000,
+    "eval_steps": 5000,
     "env_name": "agario-screen-v0",
 
     "metaParameters": {
-        "learning_rate": [0.001],
+        "learning_rate": [0.00005],
         "max_grad_norm": [0.5],
-        "gae_lambda": [0.95],
-        "update_epochs": [4],
+        "gae_lambda": [0.8],
+        "update_epochs": [3],
         "gamma": [0.99],
         "vf_coef": [0.5],
         "ent_coef": [0.0],
-        "clip_coef": [0.2],
+        "clip_coef": [0.5],
         "clip_vloss": false,
         "anneal_lr": true,
         "num_steps": 2048,
@@ -20,7 +20,7 @@
         "num_layers": 2,
         "hidden_size": 64,
         "norm_obs": true,
-        "norm_reward": true,
+        "norm_reward": false,
         "norm_adv": true,
         "hybrid": false
     }

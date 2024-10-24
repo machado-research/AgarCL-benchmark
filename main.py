@@ -25,7 +25,7 @@ parser.add_argument('-i', '--idxs', nargs='+', type=int, required=True)
 parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}/')
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/')
 parser.add_argument('--silent', action='store_true', default=False)
-parser.add_argument('--render', action='store_true', default=False)
+parser.add_argument('--render', action='store_true', default=True)
 parser.add_argument('--track', action='store_true', default=False)
 parser.add_argument('--gpu', action='store_true', default=False)
 
@@ -86,14 +86,16 @@ for idx in indices:
 
     rl_agent = RLAgent(exp, idx, env_config=env_config,  device=device,
                        collector_config=collector_config, render=args.render)
+    rl_agent.load_checkpoint('/home/mamm/ayman/thesis/AgarLE-benchmark/checkpoints/run_1.pt')
 
-    last_obs = rl_agent.train()
-    eval_avg_reward, eval_mov_average  = rl_agent.eval(last_obs)
+    # last_obs = rl_agent.train()
+    eval_avg_reward, eval_mov_average  = rl_agent.eval()
 
     print(f'Run {idx} took {time.time() - start_time:.2f}s')
     print(f'Eval Avg Reward: {eval_avg_reward:.2f}')
     print(f'Eval Moving Avg Reward: {eval_mov_average:.2f}')
     
-    rl_agent.save_collector(exp, args.save_path)
-    full_path = os.path.join(args.checkpoint_path, f'run_{idx}.pt')
-    rl_agent.save_checkpoint(full_path)
+    # rl_agent.save_collector(exp, args.save_path)
+    # full_path = os.path.join(args.checkpoint_path, f'run_{idx}.pt')
+    # os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    # rl_agent.save_checkpoint(full_path)

@@ -62,6 +62,12 @@ class CNNAgent(nn.Module):
         action_mean = self.actor_mean(features).reshape(-1, self.action_dim)
         action_logstd = self.actor_logstd.expand_as(action_mean)
         action_std = torch.exp(action_logstd)
+        # Ensure no NaN values in action_mean and action_std
+        if torch.isnan(action_mean).any() or torch.isnan(action_std).any():
+            import pdb; pdb.set_trace()
+            raise ValueError("NaN values found in action_mean or action_std")
+        action_mean = torch.where(torch.isnan(action_mean), torch.zeros_like(action_mean), action_mean)
+        action_std = torch.where(torch.isnan(action_std), torch.ones_like(action_std), action_std)
         probs = Normal(action_mean, action_std)
 
         if action is None:

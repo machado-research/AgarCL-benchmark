@@ -1,8 +1,8 @@
 {
-    "ticks_per_step": 1,
+    "ticks_per_step": 4,
     "num_frames": 1,
-    "arena_size": 500,
-    "num_pellets": 500,
+    "arena_size": 256,
+    "num_pellets": 1024,
     "num_viruses": 0,
     "num_bots": 0,
     "pellet_regen": true,
