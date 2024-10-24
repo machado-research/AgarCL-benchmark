@@ -12,7 +12,8 @@ from PyExpUtils.collection.Sampler import Identity
 from src.wrappers.gym import *
 from src.utils.actions import modify_action, modify_hybrid_action
 from src.utils.ppo_networks import *
-
+from PIL import Image
+from tqdm import tqdm
 
 class PPO:
     def __init__(self,
@@ -107,7 +108,7 @@ class PPO:
         next_obs = torch.Tensor(next_obs).to(self.device)
         next_done = torch.zeros(self.num_envs).to(self.device)
 
-        for iteration in range(1, self.num_iterations + 1):
+        for iteration in tqdm(range(1, self.num_iterations + 1), desc="Training Progress"):
             # Annealing the rate if instructed to do so.
             if self.anneal_lr:
                 frac = 1.0 - (iteration - 1.0) / self.num_iterations
@@ -124,6 +125,14 @@ class PPO:
                     action, logprob, _, value = self.agent.get_action_and_value(
                         next_obs, action_limits=(self.min_action, self.max_action))
                     self.values[step] = value.flatten()
+
+                    # obs_image = next_obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
+                    # obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
+                    # img = Image.fromarray(obs_image)
+                    # import os
+                    # if not os.path.exists("/home/ayman/thesis/AgarLE-benchmark/observations"):
+                    #     os.makedirs("/home/ayman/thesis/AgarLE-benchmark/observations")
+                    # img.save(f"/home/ayman/thesis/AgarLE-benchmark/observations/obs_train_{global_step}.png")
 
                 self.actions[step] = action
                 self.logprobs[step] = logprob
@@ -261,11 +270,19 @@ class PPO:
     def eval(self, obs):
         eval_avg_reward = 0
         eval_mov_average = 0
-        for _ in range(self.eval_timesteps):
+        for x in range(self.eval_timesteps):
             with torch.no_grad():
                 action, _, _, _ = self.agent.get_action_and_value(
                     obs, action_limits=(self.min_action, self.max_action))
                 action = action.detach().cpu().numpy().squeeze()
+                # Save the observation as an image
+                obs_image = obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
+                obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
+                img = Image.fromarray(obs_image)
+                import os
+                if not os.path.exists("/home/ayman/thesis/AgarLE-benchmark/observations"):
+                    os.makedirs("/home/ayman/thesis/AgarLE-benchmark/observations")
+                img.save(f"/home/ayman/thesis/AgarLE-benchmark/observations/obs_test_{x}.png")
 
                 if self.hybrid:
                     step_action = modify_hybrid_action(action)
@@ -304,7 +321,6 @@ class PPO:
 
     def save_collector(self, exp, save_path):
         from PyExpUtils.results.sqlite import saveCollector
-
         self.collector.reset()
         saveCollector(exp, self.collector, base=save_path)
 

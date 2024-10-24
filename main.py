@@ -95,3 +95,5 @@ for idx in indices:
     print(f'Eval Moving Avg Reward: {eval_mov_average:.2f}')
     
     rl_agent.save_collector(exp, args.save_path)
+    full_path = os.path.join(args.checkpoint_path, f'run_{idx}.pt')
+    rl_agent.save_checkpoint(full_path)
