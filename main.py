@@ -15,6 +15,8 @@ from PyExpUtils.collection.utils import Pipe
 from src.experiment import ExperimentModel
 from src.experiment.RLAgent import RLAgent
 
+import warnings
+warnings.filterwarnings("ignore")
 
 # ------------------
 # -- Command Args --
@@ -26,7 +28,6 @@ parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}/')
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/')
 parser.add_argument('--silent', action='store_true', default=False)
 parser.add_argument('--render', action='store_true', default=False)
-parser.add_argument('--track', action='store_true', default=False)
 parser.add_argument('--gpu', action='store_true', default=False)
 
 args = parser.parse_args()
@@ -37,6 +38,7 @@ device = torch.device("cuda" if torch.cuda.is_available()
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('exp')
+logging.getLogger('jax').setLevel(logging.ERROR)
 prod = 'cdr' in socket.gethostname() or args.silent
 if not prod:
     logger.setLevel(logging.DEBUG)
@@ -50,16 +52,18 @@ indices = args.idxs
 for idx in indices:
     collector_config = {
         'SPS': Identity(),
-        'reward': Identity(),
+        'reward': Subsample(500),
         'moving_avg': Pipe(
             MovingAverage(0.999),
             Subsample(500),
         ),
-        'eval_reward': Identity(),
-        'eval_moving_avg': Pipe(
-            MovingAverage(0.999),
-            Subsample(500),
-        ),
+        'l2_norm': Identity(),
+        'activation_norm': Identity(),
+        'spectral_norm': Identity(),
+        'spectral_norm_grad': Identity(),
+        'hidden_stable_rank': Identity(),
+        'stable_weight_rank': Identity(),
+        'dormant_units': Identity(),
     }
 
     run = exp.getRun(idx)
@@ -70,28 +74,13 @@ for idx in indices:
     torch.manual_seed(idx)
     torch.backends.cudnn.deterministic = True
 
-    if args.track:
-        import wandb
-        wandb.init(
-            project=exp.name,
-            sync_tensorboard=True,
-            config=vars(args),
-            name=f'{exp.name}-{idx}',
-            monitor_gym=True,
-            save_code=True,
-        )
-
     # Run the experiment
     start_time = time.time()
 
     rl_agent = RLAgent(exp, idx, env_config=env_config,  device=device,
                        collector_config=collector_config, render=args.render)
-
-    last_obs = rl_agent.train()
-    eval_avg_reward, eval_mov_average  = rl_agent.eval(last_obs)
-
-    print(f'Run {idx} took {time.time() - start_time:.2f}s')
-    print(f'Eval Avg Reward: {eval_avg_reward:.2f}')
-    print(f'Eval Moving Avg Reward: {eval_mov_average:.2f}')
     
+    score = rl_agent.train()
+
+    logger.debug(f'Run {idx} took {time.time() - start_time:.2f}s and scored {score}')
     rl_agent.save_collector(exp, args.save_path)

@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.distributions.normal import Normal
 from torch.distributions.categorical import Categorical
 
-from src.utils.mis import preprocess_image_observation
+from src.utils.torch.mis import preprocess_image_observation
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
@@ -50,6 +50,11 @@ class CNNAgent(nn.Module):
         self.action_dim = action_shape[0]
         
         print(f'PPO has {self.get_parameter_count()} parameters!')
+        
+    def forward(self, x, action=None):
+        x = preprocess_image_observation(x)
+        features = self.conv_layers(x)
+        return self.actor_mean(features), self.critic(features)
 
     def get_value(self, x):
         x = preprocess_image_observation(x)

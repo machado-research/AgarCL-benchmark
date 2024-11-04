@@ -22,13 +22,11 @@ class SAC:
                  hypers: dict,
                  collector_config: dict,
                  total_timesteps: int = 1e6,
-                 eval_timesteps: int = 3000,
                  render: bool = False,
                  ) -> None:
 
         self.env = env
         self.total_timesteps = total_timesteps
-        self.eval_timesteps = eval_timesteps
         self.render = render
         self.device = device
         self.autotune = True
@@ -36,7 +34,6 @@ class SAC:
         self.collector = self.collector_init(collector_config)
         self.collector.setIdx(seed)
 
-        self.hybrid = hypers['hybrid']
         self.q_lr = hypers['q_lr']
         self.policy_lr = hypers['policy_lr']
         self.buffer_size = int(hypers['buffer_size'])
@@ -58,18 +55,8 @@ class SAC:
         self.obs_shape = self.env.observation_space.shape
         self.env.observation_space.dtype = np.float32
 
-        if self.hybrid:
-            cont_action_shape = self.env.action_space[0].shape[0]
-            dis_action_shape = self.env.action_space[1].n
-            self.actor = HybridActor(cont_action_shape, dis_action_shape,
-                                     self.obs_shape, self.min_action, self.max_action).to(self.device)
-        else:
-            if len(self.obs_shape) > 1:
-                self.actor = CNNActor(self.action_shape, self.obs_shape,
-                                   self.min_action, self.max_action, self.hidden_dim).to(self.device)
-            else:
-                self.actor = Actor(self.action_shape, self.obs_shape,
-                                   self.min_action, self.max_action).to(self.device)
+        self.actor = CNNActor(self.action_shape, self.obs_shape,
+                              self.min_action, self.max_action, self.hidden_dim).to(self.device)
 
         if len(self.obs_shape) > 1:
             self.qf1 = CNNSoftQNetwork(
@@ -115,6 +102,8 @@ class SAC:
         )
 
     def train(self):
+        trial_rewards = 0
+        steps = 0
         start_time = time.time()
 
         # TRY NOT TO MODIFY: start the game
@@ -129,15 +118,15 @@ class SAC:
                     torch.Tensor(obs).to(self.device))
                 action = action.detach().cpu().numpy().squeeze()
 
-            if self.hybrid:
-                step_action = modify_hybrid_action(action)
-            else:
-                step_action = modify_action(
-                    action, self.min_action, self.max_action)
+            step_action = modify_action(
+                action, self.min_action, self.max_action)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, termination, truncation, info = self.env.step(
                 step_action)
+
+            trial_rewards += reward
+            steps += 1
 
             self.collector.collect("reward", reward)
             self.collector.collect("moving_avg", reward)
@@ -229,38 +218,7 @@ class SAC:
                     self.collector.collect("SPS", int(global_step /
                                                       (time.time() - start_time)))
 
-        return torch.Tensor(next_obs).to(self.device)
-
-    def eval(self, obs):
-        eval_avg_reward = 0
-        eval_mov_average = 0
-
-        for _ in range(self.eval_timesteps):
-            with torch.no_grad():
-                action, _, _ = self.actor.get_action(obs)
-                action = action.detach().cpu().numpy().squeeze()
-
-                if self.hybrid:
-                    step_action = modify_hybrid_action(action)
-                else:
-                    step_action = modify_action(
-                        action, self.min_action, self.max_action)
-
-                next_obs, reward, termination, truncation, info = self.env.step(
-                    step_action)
-
-                eval_avg_reward += reward
-                eval_mov_average = 0.99 * eval_mov_average + 0.01 * reward
-
-                if self.render:
-                    self.env.render()
-
-                obs = torch.Tensor(next_obs).to(self.device)
-
-                self.collector.collect("eval_reward", reward)
-                self.collector.collect("eval_moving_avg", reward)
-
-        return eval_avg_reward, eval_mov_average
+        return trial_rewards/steps
 
     @staticmethod
     def collector_init(config):

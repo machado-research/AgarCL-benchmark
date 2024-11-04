@@ -10,8 +10,9 @@ from PyExpUtils.collection.Collector import Collector
 from PyExpUtils.collection.Sampler import Identity
 
 from src.wrappers.gym import *
-from src.utils.actions import modify_action, modify_hybrid_action
-from src.utils.ppo_networks import *
+from src.utils.torch.actions import modify_action
+from src.utils.torch.ppo_networks import CNNAgent
+from src.measurements.torch_norms import get_statistics
 
 
 class PPO:
@@ -22,21 +23,18 @@ class PPO:
                  hypers: dict,
                  collector_config: dict,
                  total_timesteps: int = 1e6,
-                 eval_timesteps: int = 3000,
                  render: bool = False,
                  ) -> None:
 
         self.env = env
         self.render = render
         self.total_timesteps = total_timesteps
-        self.eval_timesteps = eval_timesteps
         self.num_envs = 1
 
         self.collector = self.collector_init(collector_config)
         self.collector.setIdx(seed)
 
         # Hyperparameters
-        self.hybrid = hypers['hybrid']
         self.num_steps = hypers['num_steps']
         self.anneal_lr = hypers['anneal_lr']
         self.learning_rate = hypers['learning_rate']
@@ -69,18 +67,8 @@ class PPO:
         self.obs_shape = self.env.observation_space.shape
         self.env.observation_space.dtype = np.float32
 
-        if self.hybrid:
-            cont_action_shape = self.env.action_space[0].shape[0]
-            dis_action_shape = self.env.action_space[1].n
-            self.agent = HybridAgent(
-                self.obs_shape, cont_action_shape, dis_action_shape).to(self.device)
-        else:
-            if len(self.obs_shape) > 1:
-                self.agent = CNNAgent(
-                    self.obs_shape, self.action_shape, self.hidden_dim).to(self.device)
-            else:
-                self.agent = Agent(
-                    self.obs_shape, self.action_shape).to(self.device)
+        self.agent = CNNAgent(
+            self.obs_shape, self.action_shape, self.hidden_dim).to(self.device)
 
         self.optimizer = optim.Adam(
             self.agent.parameters(), lr=self.learning_rate, eps=1e-5)
@@ -100,7 +88,9 @@ class PPO:
             (self.num_steps, self.num_envs)).to(self.device)
 
     def train(self):
-        global_step = 0
+        self.trial_return = 0.0
+        self.episodes = 0
+        self.steps = 0
 
         start_time = time.time()
         next_obs = self.env.reset()
@@ -115,7 +105,6 @@ class PPO:
                 self.optimizer.param_groups[0]["lr"] = lrnow
 
             for step in range(0, self.num_steps):
-                global_step += self.num_envs
                 self.obs[step] = next_obs
                 self.dones[step] = next_done
 
@@ -129,11 +118,8 @@ class PPO:
                 self.logprobs[step] = logprob
                 action = action.detach().cpu().numpy().squeeze()
 
-                if self.hybrid:
-                    step_action = modify_hybrid_action(action)
-                else:
-                    step_action = modify_action(
-                        action, self.min_action, self.max_action)
+                step_action = modify_action(
+                    action, self.min_action, self.max_action)
 
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_obs, reward, termination, truncation, info = self.env.step(
@@ -144,7 +130,11 @@ class PPO:
                     reward).to(self.device).view(-1)
                 next_obs, next_done = torch.Tensor(next_obs).to(
                     self.device), torch.Tensor(next_done).to(self.device)
+                
+                self.trial_return += reward
+                self.steps += 1
 
+                self.collector.next_frame()
                 self.collector.collect("reward", reward)
                 self.collector.collect("moving_avg", reward)
 
@@ -233,6 +223,12 @@ class PPO:
                         self.agent.parameters(), self.max_grad_norm)
                     self.optimizer.step()
 
+                # stats = get_statistics(
+                #     self.agent, (b_obs[mb_inds], b_actions[mb_inds]))
+                # print(stats)
+                # for key in stats:
+                #     self.collector.collect(key, stats[key])
+
                 if self.target_kl is not None and approx_kl > self.target_kl:
                     break
 
@@ -242,7 +238,7 @@ class PPO:
                 np.var(y_true - y_pred) / var_y
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
-            self.collector.next_frame()
+            # self.collector.next_frame()
             self.collector.collect("lr", self.optimizer.param_groups[0]["lr"])
             self.collector.collect("value_loss", v_loss.item())
             self.collector.collect("policy_loss", pg_loss.item())
@@ -252,42 +248,10 @@ class PPO:
             self.collector.collect("clipfrac", np.mean(clipfracs))
             self.collector.collect("explained_variance", explained_var)
 
-            print("SPS:", int(global_step / (time.time() - start_time)), global_step)
-            self.collector.collect("SPS", int(
-                global_step / (time.time() - start_time)))
+            print("SPS:", int(self.steps / (time.time() - start_time)), self.steps)
+            self.collector.collect("SPS", int(self.steps / (time.time() - start_time)))
 
-        return torch.Tensor(next_obs).to(self.device)
-
-    def eval(self, obs):
-        eval_avg_reward = 0
-        eval_mov_average = 0
-        for _ in range(self.eval_timesteps):
-            with torch.no_grad():
-                action, _, _, _ = self.agent.get_action_and_value(
-                    obs, action_limits=(self.min_action, self.max_action))
-                action = action.detach().cpu().numpy().squeeze()
-
-                if self.hybrid:
-                    step_action = modify_hybrid_action(action)
-                else:
-                    step_action = modify_action(
-                        action, self.min_action, self.max_action)
-
-                next_obs, reward, termination, truncation, info = self.env.step(
-                    step_action)
-
-                eval_avg_reward += reward
-                eval_mov_average = 0.999 * eval_mov_average + 0.001 * reward
-
-                if self.render:
-                    self.env.render()
-
-                obs = torch.Tensor(next_obs).to(self.device)
-
-                self.collector.collect("eval_reward", reward)
-                self.collector.collect("eval_moving_avg", reward)
-
-        return eval_avg_reward, eval_mov_average
+        return self.trial_return / self.steps
 
     @staticmethod
     def collector_init(config):
@@ -312,10 +276,9 @@ class PPO:
         checkpoint = torch.load(path)
         self.agent.load_state_dict(checkpoint['agent_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    
+
     def save_checkpoint(self, path):
         torch.save({
             'agent_state_dict': self.agent.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
         }, path)
-    

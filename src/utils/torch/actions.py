@@ -6,7 +6,7 @@ def modify_action(logits, start, end):
     range_array = np.linspace(start, end, 4)
     insert_index = np.searchsorted(range_array, dis_action)
     dis_action = insert_index - 1
-    dis_action = np.clip(dis_action, 0, 2)
+    dis_action = np.maximum(dis_action, 0)
     return ([((cont_action), dis_action)])
 
 

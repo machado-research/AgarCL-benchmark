@@ -1,8 +1,8 @@
 {
     "agent": "PPO",
-    "total_steps": 1000,
-    "eval_steps": 5,
+    "total_steps": 100000,
     "env_name": "agario-screen-v0",
+    "use_jax": true,
 
     "metaParameters": {
         "learning_rate": [0.00001, 0.00003, 0.0001, 0.0003, 0.001, 0.003],
@@ -21,7 +21,6 @@
         "hidden_size": 64,
         "norm_obs": true,
         "norm_reward": true,
-        "norm_adv": true,
-        "hybrid": false
+        "norm_adv": true
     }
 }

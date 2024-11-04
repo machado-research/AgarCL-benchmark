@@ -1,0 +1,22 @@
+{
+    "agent": "SAC",
+    "total_steps": 100,
+    "env_name": "agario-screen-v0",
+    "use_jax": true,
+    
+    "metaParameters": {
+        "q_lr": [3e-4],
+        "policy_lr": [3e-4],
+        "gamma": [0.99],
+        "policy_frequency": [1],
+        "target_network_frequency": [1],
+        "tau": [0.005],
+        "buffer_size": 100000,
+        "learning_starts": 10,
+        "batch_size": 64,
+        "num_layers": 2,
+        "hidden_size": 256,
+        "norm_obs": false,
+        "norm_reward": false
+    }
+}

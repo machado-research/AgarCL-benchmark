@@ -7,3 +7,10 @@ imageio==2.35.1
 imageio-ffmpeg==0.5.1
 tqdm==4.66.5
 PyExpUtils-andnp~=7.0
+chex~=0.1
+distrax~=0.1
+flax~=0.10
+jax~=0.4
+jaxlib~=0.4
+optax~=0.2
+tensorflow-probability~=0.24

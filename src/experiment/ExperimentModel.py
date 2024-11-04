@@ -9,6 +9,7 @@ class ExperimentModel(ExperimentDescription):
         self.total_steps = d.get('total_steps')
         self.eval_steps = d.get('eval_steps')
         self.env_name = d.get('env_name')
+        self.use_jax = d.get('use_jax')
         
         self.name = self.getExperimentName()
 
