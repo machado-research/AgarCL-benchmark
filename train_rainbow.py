@@ -135,7 +135,7 @@ def main():
         default=3 * 60 * 60,  # 30 minutes with 60 fps
         help="Maximum number of frames for each episode.",
     )
-    parser.add_argument("--replay-start-size", type=int, default=2 * 10**3)
+    parser.add_argument("--replay-start-size", type=int, default=50)
     parser.add_argument("--eval-n-steps", type=int, default=12500)
     parser.add_argument("--eval-interval", type=int, default=25000)
     parser.add_argument(
