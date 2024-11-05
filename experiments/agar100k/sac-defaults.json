@@ -1,6 +1,6 @@
 {
     "agent": "SAC",
-    "total_steps": 100,
+    "total_steps": 100000,
     "env_name": "agario-screen-v0",
     "use_jax": true,
     

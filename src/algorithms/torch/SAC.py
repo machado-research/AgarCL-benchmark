@@ -10,8 +10,8 @@ from stable_baselines3.common.buffers import ReplayBuffer
 from PyExpUtils.collection.Collector import Collector
 from PyExpUtils.collection.Sampler import Identity
 
-from src.utils.actions import modify_action, modify_hybrid_action
-from src.utils.sac_networks import *
+from src.utils.torch.actions import modify_action, modify_hybrid_action
+from src.utils.torch.sac_networks import *
 
 
 class SAC:
@@ -127,6 +127,8 @@ class SAC:
 
             trial_rewards += reward
             steps += 1
+            
+            
 
             self.collector.collect("reward", reward)
             self.collector.collect("moving_avg", reward)
@@ -201,7 +203,7 @@ class SAC:
                         target_param.data.copy_(
                             self.tau * param.data + (1 - self.tau) * target_param.data)
 
-                if global_step % 2000 == 0:
+                if global_step % 10 == 0:
                     self.collector.next_frame()
                     self.collector.collect(
                         "qf1_values", qf1_a_values.mean().item())
@@ -214,7 +216,7 @@ class SAC:
                     self.collector.collect("alpha", alpha)
                     self.collector.collect("alpha_loss", alpha_loss.item())
 
-                    print("SPS:", int(global_step / (time.time() - start_time)))
+                    print("SPS:", int(global_step / (time.time() - start_time)), " | Reward: ", reward, " | Score: ", trial_rewards/steps)
                     self.collector.collect("SPS", int(global_step /
                                                       (time.time() - start_time)))
 

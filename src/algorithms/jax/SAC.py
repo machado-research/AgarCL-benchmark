@@ -295,6 +295,9 @@ class SAC:
                 self.episodes += 1
             else:
                 obs = next_obs
+                
+            if self.steps % 10 == 0:
+                print(f"Step: {self.steps}, Reward: {reward}, Score: {self.trial_return / self.steps}")
 
         # Calculate and return final score
         final_score = self.trial_return / self.steps

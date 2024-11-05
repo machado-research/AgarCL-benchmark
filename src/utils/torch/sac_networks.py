@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.utils.mis import preprocess_image_observation
+from src.utils.torch.mis import preprocess_image_observation
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -5

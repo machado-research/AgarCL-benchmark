@@ -34,7 +34,7 @@ args = parser.parse_args()
 
 env_config = json.load(open('env_config.json', 'r'))
 device = torch.device("cuda" if torch.cuda.is_available()
-                      and args.gpu else "cpu")
+                         else "cpu")
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('exp')
