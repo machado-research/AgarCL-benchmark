@@ -60,12 +60,18 @@ class ModifyObservationWrapper(gym.ObservationWrapper):
 
     def observation(self, observation):
         # Modify the observation here
-        modified_observation = observation.transpose(0,3,1,2)[0]
+        # Normalize the observation
+        modified_observation = observation.transpose(0, 3, 1, 2)[0]
+        # modeified_observation = modified_observation/255
+        # modified_observation = (modified_observation - np.mean(modified_observation)) / np.std(modified_observation)
+        
+        # Normalize the observation
         return modified_observation
 
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         obs = obs.transpose(0,3,1,2)[0]
+        # obs = (obs - np.mean(obs)) / np.std(obs)
         info = {}  # Add any additional information you want in the info dictionary
         return obs, info
 
@@ -135,9 +141,9 @@ def main():
         default=3 * 60 * 60,  # 30 minutes with 60 fps
         help="Maximum number of frames for each episode.",
     )
-    parser.add_argument("--replay-start-size", type=int, default=50)
-    parser.add_argument("--eval-n-steps", type=int, default=12500)
-    parser.add_argument("--eval-interval", type=int, default=25000)
+    parser.add_argument("--replay-start-size", type=int, default=10000)
+    parser.add_argument("--eval-n-steps", type=int, default=3000)
+    parser.add_argument("--eval-interval", type=int, default=100000)
     parser.add_argument(
         "--log-level",
         type=int,
@@ -206,23 +212,35 @@ def main():
     n_atoms = 51
     v_max = 10
     v_min = -10
-    hidden_size = 3
+    # q_func = nn.Sequential(
+    #     nn.Conv2d(3, 64, kernel_size=16, stride=1),
+    #     nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+    #     nn.ReLU(),
+    #     nn.Conv2d(64, 32, kernel_size=8, stride=1),
+    #     nn.LayerNorm([32, 62, 62]),  # Add LayerNorm after the second Conv2d layer
+    #     nn.ReLU(),
+    #     nn.Flatten(),
+    #     nn.Linear(32 * 62 * 62, 128),  # Adjust the input size according to the output of Conv2d
+    #     nn.LayerNorm(128),  # Add LayerNorm after the first Linear layer
+    #     nn.ReLU(),
+    #     DistributionalDuelingHead(128, n_actions, n_atoms, v_min, v_max),
+    # )
     q_func = nn.Sequential(
-        nn.Conv2d(3, 16, kernel_size=8, stride=1),
-        nn.ReLU(),
-        nn.Conv2d(16, 32, kernel_size=4, stride=2),
-        nn.ReLU(),
-        nn.Conv2d(32, 32, kernel_size=3, stride=4),
+        nn.Conv2d(3, 64, kernel_size=16, stride=1),
+        nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
         nn.ReLU(),
         nn.Flatten(),
-        nn.Linear(2592, 128),
+        nn.Linear(64 * 69 * 69, 256),  # Adjust the input size according to the output of Conv2d
+        nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer, 
         nn.ReLU(),
-        DistributionalDuelingHead(128, n_actions, n_atoms, v_min, v_max),
+        DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
     )
     # Noisy nets
     pnn.to_factorized_noisy(q_func, sigma_scale=args.noisy_net_sigma)
     # Turn off explorer
-    explorer = explorers.Greedy()
+    explorer = explorers.LinearDecayEpsilonGreedy(
+        start_epsilon=1.0,end_epsilon = 0.001, random_action_func=env.action_space.sample, decay_steps = 850000
+    )
 
     # Use the same hyper parameters as https://arxiv.org/abs/1710.02298
     opt = torch.optim.Adam(q_func.parameters(), 6.25e-5, eps=1.5 * 10**-4)
@@ -289,11 +307,12 @@ def main():
             outdir=args.outdir,
             save_best_so_far_agent=True,
             eval_env=eval_env,
+            checkpoint_freq = 50000,
         )
 
-        dir_of_best_network = os.path.join(args.outdir, "best")
-        os.makedirs(dir_of_best_network, exist_ok=True)
-        agent.load(dir_of_best_network)
+        # dir_of_best_network = os.path.join(args.outdir, "best")
+        # os.makedirs(dir_of_best_network, exist_ok=True)
+        # agent.load(dir_of_best_network)
 
         # run 200 evaluation episodes, each capped at 30 mins of play
         stats = experiments.evaluator.eval_performance(
