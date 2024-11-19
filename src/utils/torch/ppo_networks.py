@@ -18,14 +18,14 @@ class CNNAgent(nn.Module):
         
         # Assuming obs_shape is (C, H, W) for channel, height, width
         self.conv_layers = nn.Sequential(
-            layer_init(nn.Conv2d(3, 32, kernel_size=8, stride=4)),
-            nn.ReLU(),
-            layer_init(nn.Conv2d(32, 64, kernel_size=4, stride=2)),
-            nn.ReLU(),
-            layer_init(nn.Conv2d(64, 64, kernel_size=3, stride=1)),
-            nn.ReLU(),
-            nn.Flatten()
-        )
+                nn.Conv2d(3, 64, kernel_size=4, stride=1),
+                nn.LayerNorm([64, 81, 81]),  # Add LayerNorm after the first Conv2d layer
+                nn.ReLU(),
+                nn.Conv2d(64, 32, kernel_size=8, stride=1),
+                nn.LayerNorm([32, 74, 74]),  # Add LayerNorm after the second Conv2d layer
+                nn.ReLU(),
+                nn.Flatten(),
+            )
 
         # Calculate the size of flattened features
         with torch.no_grad():
@@ -35,15 +35,17 @@ class CNNAgent(nn.Module):
             conv_out_size = conv_out.size(1)
 
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(conv_out_size, hidden_dim)),
+            nn.Linear(conv_out_size, 256),  # Adjust the input size according to the output of Conv2d
+            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer,
             nn.ReLU(),
-            layer_init(nn.Linear(hidden_dim, 1), std=1.0),
+            nn.Linear(256, 1)
         )
 
         self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(conv_out_size, hidden_dim)),
+            nn.Linear(conv_out_size, 256),  # Adjust the input size according to the output of Conv2d
+            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer,
             nn.ReLU(),
-            layer_init(nn.Linear(hidden_dim, np.prod(action_shape)), std=0.01),
+            nn.Linear(256, np.prod(action_shape))
         )
 
         self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(action_shape)))

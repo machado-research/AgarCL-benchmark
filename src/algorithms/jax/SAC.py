@@ -5,6 +5,8 @@ import optax
 import jax.numpy as jnp
 import gymnasium as gym
 from functools import partial
+
+import flax.linen as nn
 import flashbax as fb
 
 from PyExpUtils.collection.Collector import Collector
@@ -86,63 +88,59 @@ class SAC:
         self.critic_optimizer = optax.adam(self.q_lr)
         self.alpha_optimizer = optax.adam(self.policy_lr)
 
-    @partial(jax.jit, static_argnums=(0,))
-    def _compute_critic_loss(self, critic_params: chex.Array, batch: TimeStep, target_q: chex.Array) -> Tuple[chex.Array, Dict]:
-        current_q1, current_q2 = self.critic.get_action_values(
-            critic_params, batch.experience.obs, batch.experience.action)
-        critic_loss = jnp.mean((current_q1 - target_q) **
-                               2 + (current_q2 - target_q)**2)
-        return critic_loss, {'critic_loss': critic_loss}
-
-    @partial(jax.jit, static_argnums=(0,))
-    def _compute_actor_loss(self, policy_params: chex.Array, critic_params: chex.Array,
-                            alpha: chex.Array, batch: TimeStep, rng: chex.PRNGKey) -> Tuple[chex.Array, Dict]:
-        actions, log_probs = self.actor.sample(
-            policy_params, batch.experience.obs, rng)
-        q1, q2 = self.critic.get_action_values(
-            critic_params, batch.experience.obs, actions)
-        min_q = jnp.minimum(q1, q2)
-        actor_loss = jnp.mean(alpha * log_probs - min_q)
-        return actor_loss, {'actor_loss': actor_loss, 'entropy': -jnp.mean(log_probs)}
-
-    @partial(jax.jit, static_argnums=(0,))
-    def _compute_alpha_loss(self, log_alpha: chex.Array, entropy: chex.Array) -> Tuple[chex.Array, Dict]:
-        alpha = jnp.exp(log_alpha)
-        alpha_loss = jnp.mean(alpha * (-entropy - self.target_entropy))
-        return alpha_loss, {'alpha_loss': alpha_loss, 'alpha': alpha}
+   
 
     @partial(jax.jit, static_argnums=(0,))
     def _update_step(self, train_state: AgentState, batch: TimeStep, rng: chex.PRNGKey):
-        # Critic update
-        next_actions, next_log_probs = self.actor.sample(
-            train_state.policy_params, batch.experience.next_obs, rng)
-        next_q1, next_q2 = self.critic.get_action_values(
-            train_state.target_params, batch.experience.next_obs, next_actions)
-
-        # Compute targets for Q-function
-        next_q = jnp.minimum(next_q1, next_q2)
+        rng_critic, rng_actor, rng_alpha = jax.random.split(rng, 3)
         alpha = jnp.exp(train_state.log_alpha)
-        next_q = next_q - alpha * next_log_probs
-        target_q = batch.experience.reward + \
-            (1 - batch.experience.done) * self.gamma * next_q
+        @jax.jit
+        def _critic_loss(critic_params: chex.Array):
+            next_actions, next_log_probs = self.actor.sample(
+            train_state.policy_params, batch.experience.next_obs, rng_critic)
+            next_q1, next_q2 = self.critic.get_action_values(
+                train_state.target_params, batch.experience.next_obs, next_actions)
 
+            # Compute targets for Q-function
+            next_q = jnp.minimum(next_q1, next_q2)
+            alpha = jnp.exp(train_state.log_alpha)
+            next_q = next_q - alpha * next_log_probs
+            target_q = batch.experience.reward + \
+                (1 - batch.experience.done) * self.gamma * next_q
+                
+            current_q1, current_q2 = self.critic.get_action_values(
+                critic_params, batch.experience.obs, batch.experience.action)
+            critic_loss = optax.huber_loss(current_q1, target_q).mean() + \
+                        optax.huber_loss(current_q2, target_q).mean()
+            return critic_loss
+
+        @jax.jit
+        def _actor_loss(policy_params):
+            actions, log_probs = self.actor.sample(policy_params, batch.experience.obs, rng_actor)
+            q1, q2 = self.critic.get_action_values(train_state.critic_params, batch.experience.obs, actions)
+            min_q = jnp.minimum(q1, q2)
+            actor_loss = jnp.mean(alpha * log_probs - min_q)
+            return actor_loss
+
+        @jax.jit
+        def _alpha_loss(log_alpha: chex.Array):
+            _, log_probs = self.actor.sample(train_state.policy_params, batch.experience.obs, rng_alpha)
+            alpha = jnp.exp(log_alpha)
+            alpha_loss = jnp.mean(alpha * (-log_probs - self.target_entropy))
+            return alpha_loss
+        
         # Update critics
-        critic_grads = jax.grad(lambda p: self._compute_critic_loss(
-            p, batch, target_q)[0])(train_state.critic_params)
+        critic_grads = jax.grad(_critic_loss)(train_state.critic_params)
         critic_updates, critic_opt_state = self.critic_optimizer.update(
             critic_grads, train_state.critic_optim)
 
         # Update actor
-        actor_loss, actor_info = self._compute_actor_loss(
-            train_state.policy_params, train_state.critic_params, alpha, batch, rng)
-        actor_grads = jax.grad(lambda p: self._compute_actor_loss(
-            p, train_state.critic_params, alpha, batch, rng)[0])(train_state.policy_params)
+        actor_grads = jax.grad(_actor_loss)(train_state.policy_params)
         actor_updates, actor_opt_state = self.actor_optimizer.update(
             actor_grads, train_state.policy_optim)
 
         # Update alpha
-        alpha_grads = jax.grad(lambda a: self._compute_alpha_loss(
-            a, actor_info['entropy'])[0])(train_state.log_alpha)
+        alpha_grads = jax.grad(_alpha_loss)(train_state.log_alpha)
         alpha_updates, alpha_opt_state = self.alpha_optimizer.update(
             alpha_grads, train_state.alpha_optim)
 
@@ -171,17 +169,19 @@ class SAC:
             timesteps=train_state.timesteps
         )
 
-    # @partial(jax.jit, static_argnums=(0,))
     def sample_action(self, policy_params: chex.Array, obs: chex.Array, rng: chex.PRNGKey, training: bool) -> chex.Array:
         if training:
             return self.actor.sample(policy_params, obs, rng)[0].squeeze()
         else:
+            print("Random")
             return jax.random.uniform(rng, self.action_shape, minval=-1.0, maxval=1.0)
+
 
     def train(self):
         """
         Main training loop with optimizations for memory and speed.
         Returns the average score across all episodes.
+        
         """
         # Initialize tracking variables
         self.trial_return = 0.0
@@ -239,13 +239,14 @@ class SAC:
             training = self.buffer.can_sample(self.buffer_state)
 
             # Get action from policy or random
-            action = self.sample_action(
-                self.train_state.policy_params,
-                obs,
-                action_rng,
-                training
-            )
+            if training:
+                action = self.actor.sample(
+                    self.train_state.policy_params, obs, action_rng)[0].squeeze()
+            else:
+                action = jax.random.uniform(
+                    action_rng, self.action_shape, minval=-1.0, maxval=1.0)
 
+            print(action, step)
             # Convert action for environment
             step_action = modify_action(
                 action, self.min_action, self.max_action)
@@ -264,20 +265,20 @@ class SAC:
             self.buffer_state = self.buffer.add(self.buffer_state, timestep)
 
             # Training phase
-            if training and self.train_state.timesteps % self.update_frequency == 0:
-                self.rng, train_rng = jax.random.split(self.rng)
+            if training:
+                self.rng, train_rng, buffer_rng = jax.random.split(self.rng, 3)
 
                 # Sample batch from buffer
-                batch = self.buffer.sample(self.buffer_state, train_rng)
+                batch = self.buffer.sample(self.buffer_state, buffer_rng)
 
                 # Update networks
                 self.train_state = self._update_step(
                     self.train_state, batch, train_rng)
 
             # Update tracking variables
-            self.train_state = self.train_state.replace(
-                timesteps=self.train_state.timesteps + 1
-            )
+            # self.train_state = self.train_state.replace(
+            #     timesteps=self.train_state.timesteps + 1
+            # )
 
             # actor_stats = get_statistics(self.actor, self.train_state.policy_params, obs, self.train_state.policy_grads)
             # critic_stats = get_statistics(self.critic, self.train_state.critic_params, obs, self.train_state.critic_grads)

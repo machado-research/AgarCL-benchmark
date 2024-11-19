@@ -30,6 +30,7 @@ class PPO:
         self.render = render
         self.total_timesteps = total_timesteps
         self.num_envs = 1
+        self.eval_steps = 1000
 
         self.collector = self.collector_init(collector_config)
         self.collector.setIdx(seed)
@@ -130,7 +131,7 @@ class PPO:
                     reward).to(self.device).view(-1)
                 next_obs, next_done = torch.Tensor(next_obs).to(
                     self.device), torch.Tensor(next_done).to(self.device)
-                
+
                 self.trial_return += reward
                 self.steps += 1
 
@@ -249,9 +250,53 @@ class PPO:
             self.collector.collect("explained_variance", explained_var)
 
             print("SPS:", int(self.steps / (time.time() - start_time)), self.steps)
-            self.collector.collect("SPS", int(self.steps / (time.time() - start_time)))
+            self.collector.collect("SPS", int(
+                self.steps / (time.time() - start_time)))
 
-        return self.trial_return / self.steps
+        return self.trial_return / self.steps, next_obs
+
+    def eval(self, last_obs=None):
+        from PIL import Image
+        import cv2
+
+        self.trial_return = 0.0
+
+        start_time = time.time()
+        next_obs = self.env.reset() if last_obs is None else last_obs
+
+        width, height = next_obs.shape[1:]
+        video = cv2.VideoWriter(
+            'results/ppo-default.avi', 0, 1, (width, height))
+        for _ in range(0, self.eval_steps):
+            # ALGO LOGIC: action logic
+            with torch.no_grad():
+                action, _, _, _ = self.agent.get_action_and_value(
+                    next_obs, action_limits=(self.min_action, self.max_action))
+
+            action = action.detach().cpu().numpy().squeeze()
+            step_action = modify_action(
+                action, self.min_action, self.max_action)
+
+            image = next_obs.transpose(1, 2, 0)  # CHW -> HWC
+            image = image.astype('uint8')  # Convert to uint8
+            image = Image.fromarray(image)
+            video.write(image)
+
+            # TRY NOT TO MODIFY: execute the game and log data.
+            next_obs, reward, _, _, _ = self.env.step(
+                step_action)
+
+            next_obs = torch.Tensor(next_obs).to(self.device)
+
+            self.trial_return += reward
+
+            self.collector.next_frame()
+            self.collector.collect("reward", reward)
+
+        print(
+            f'After {self.eval_steps} got {self.trial_return} in {time.time() - start_time}')
+        cv2.destroyAllWindows()
+        video.release()
 
     @staticmethod
     def collector_init(config):

@@ -8,6 +8,7 @@ import argparse
 import logging
 import json
 import socket
+import jax
 
 # saving the results of the experiment
 from PyExpUtils.collection.Sampler import MovingAverage, Subsample, Identity
@@ -73,6 +74,7 @@ for idx in indices:
     np.random.seed(idx)
     torch.manual_seed(idx)
     torch.backends.cudnn.deterministic = True
+    
 
     # Run the experiment
     start_time = time.time()
@@ -80,7 +82,9 @@ for idx in indices:
     rl_agent = RLAgent(exp, idx, env_config=env_config,  device=device,
                        collector_config=collector_config, render=args.render)
     
-    score = rl_agent.train()
+    score, last_obs = rl_agent.train()
+    rl_agent.eval(last_obs)
 
     logger.debug(f'Run {idx} took {time.time() - start_time:.2f}s and scored {score}')
     rl_agent.save_collector(exp, args.save_path)
+    

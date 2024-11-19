@@ -77,7 +77,8 @@ def get_spectral_norms(model):
                     torch.matmul(weight, v)
                 )
             spectral_norms[name] = spectral_norm.item()
-    return tuple(spectral_norms)
+            
+    return spectral_norms
 
 
 def get_spectral_norm_gradients(model):
@@ -262,7 +263,7 @@ def get_statistics(model, input_data):
 
 
 if __name__ == '__main__':
-    from src.utils.ppo_networks import CNNAgent
+    from src.utils.torch.sac_networks import CriticNetwork as CNNAgent
     
     input_tensor = torch.randn(1, 64, 64, 3)
 
@@ -272,21 +273,21 @@ if __name__ == '__main__':
     spectral_norms = get_spectral_norms(model)
     print('Spectral norms:', spectral_norms)
 
-    layer_l2_norms = get_layer_l2_norms(model)
-    print('Layer L2 norms:', layer_l2_norms)
+    # layer_l2_norms = get_layer_l2_norms(model)
+    # print('Layer L2 norms:', layer_l2_norms)
 
-    avg_activation_norms = get_avg_activation_norms(
-        model, (input_tensor, torch.randn(1, 1)))
-    print('Average activation norms:', avg_activation_norms)
+    # avg_activation_norms = get_avg_activation_norms(
+    #     model, (input_tensor, torch.randn(1, 1)))
+    # print('Average activation norms:', avg_activation_norms)
 
-    stable_weight_ranks = get_stable_weight_ranks(model)
-    print('Stable weight ranks:', stable_weight_ranks)
+    # stable_weight_ranks = get_stable_weight_ranks(model)
+    # print('Stable weight ranks:', stable_weight_ranks)
     
-    hidden_stable_ranks = get_hidden_stable_ranks(model, (input_tensor, torch.randn(1, 1)))
-    print('Hidden stable ranks:', hidden_stable_ranks)
+    # hidden_stable_ranks = get_hidden_stable_ranks(model, (input_tensor, torch.randn(1, 1)))
+    # print('Hidden stable ranks:', hidden_stable_ranks)
     
-    dormant_neurons = count_dormant_neurons(model, (input_tensor, torch.randn(1, 1)))
-    print('Dormant neurons:', dormant_neurons)
+    # dormant_neurons = count_dormant_neurons(model, (input_tensor, torch.randn(1, 1)))
+    # print('Dormant neurons:', dormant_neurons)
 
     # loss = torch.nn.MSELoss()
     # model.zero_grad()
