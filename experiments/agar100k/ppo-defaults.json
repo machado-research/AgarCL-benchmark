@@ -1,6 +1,6 @@
 {
     "agent": "PPO",
-    "total_steps": 4000,
+    "total_steps": 40,
     "env_name": "agario-screen-v0",
     "use_jax": false,
 
@@ -15,8 +15,8 @@
         "clip_coef": [0.2],
         "clip_vloss": false,
         "anneal_lr": true,
-        "num_steps": 2048,
-        "num_minibatches": 32,
+        "num_steps": 20,
+        "num_minibatches": 10,
         "num_layers": 2,
         "hidden_size": 64,
         "norm_obs": true,

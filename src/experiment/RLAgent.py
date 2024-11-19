@@ -33,8 +33,8 @@ class RLAgent:
     def train(self):
         return self.agent.train()
 
-    def eval(self, obs):
-        return self.agent.eval(obs)
+    def eval(self, obs, save_path):
+        return self.agent.eval(obs, save_path)
     
     def get_collector(self):
         return self.agent.collector

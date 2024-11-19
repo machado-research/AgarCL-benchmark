@@ -83,7 +83,9 @@ for idx in indices:
                        collector_config=collector_config, render=args.render)
     
     score, last_obs = rl_agent.train()
-    rl_agent.eval(last_obs)
+    
+    save_path = f'{args.save_path}/results'
+    rl_agent.eval(last_obs, save_path=save_path)
 
     logger.debug(f'Run {idx} took {time.time() - start_time:.2f}s and scored {score}')
     rl_agent.save_collector(exp, args.save_path)

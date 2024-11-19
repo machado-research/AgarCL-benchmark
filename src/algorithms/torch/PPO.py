@@ -255,8 +255,7 @@ class PPO:
 
         return self.trial_return / self.steps, next_obs
 
-    def eval(self, last_obs=None):
-        from PIL import Image
+    def eval(self, last_obs=None, save_path=None):
         import cv2
 
         self.trial_return = 0.0
@@ -264,10 +263,15 @@ class PPO:
         start_time = time.time()
         next_obs = self.env.reset() if last_obs is None else last_obs
 
-        width, height = next_obs.shape[1:]
+        width, height = next_obs.shape[1], next_obs.shape[2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # or use 'avc1' for H.264 encoding
         video = cv2.VideoWriter(
-            'results/ppo-default.avi', 0, 1, (width, height))
-        for _ in range(0, self.eval_steps):
+            f'{save_path}/ppo-default.mp4', 
+            fourcc, 
+            30,  # framerate - increased to 30fps for smoother video
+            (width, height)
+        )
+        for step in range(0, 10):
             # ALGO LOGIC: action logic
             with torch.no_grad():
                 action, _, _, _ = self.agent.get_action_and_value(
@@ -277,9 +281,9 @@ class PPO:
             step_action = modify_action(
                 action, self.min_action, self.max_action)
 
-            image = next_obs.transpose(1, 2, 0)  # CHW -> HWC
+            image = next_obs[0].detach().cpu().numpy()
             image = image.astype('uint8')  # Convert to uint8
-            image = Image.fromarray(image)
+            # image = Image.fromarray(image)
             video.write(image)
 
             # TRY NOT TO MODIFY: execute the game and log data.
@@ -295,6 +299,7 @@ class PPO:
 
         print(
             f'After {self.eval_steps} got {self.trial_return} in {time.time() - start_time}')
+        print(f'Video saved at {save_path}/ppo-default.mp4')
         cv2.destroyAllWindows()
         video.release()
 
