@@ -63,8 +63,12 @@ class SAC:
         self.tau = hypers['tau']
 
         # Define networks
-        self.env.action_space = (gym.spaces.Box(-1, 1, self.env.action_space[0].shape, dtype=jnp.float32),
-                                 gym.spaces.Discrete(3))
+        # self.env.action_space = (gym.spaces.Box(-1, 1, self.env.action_space[0].shape, dtype=jnp.float32),
+        #                          gym.spaces.Discrete(3))
+        
+        self.env.action_space = (gym.spaces.Box(-1, 1, self.env.action_space.shape, dtype=jnp.float32),
+                         gym.spaces.Discrete(3))
+
 
         self.max_action = float(self.env.action_space[0].high[0])
         self.min_action = float(self.env.action_space[0].low[0])
@@ -302,7 +306,7 @@ class SAC:
 
         # Calculate and return final score
         final_score = self.trial_return / self.steps
-        return final_score
+        return final_score,obs
 
     def save_collector(self, exp, save_path):
         saveCollector(exp, self.collector, save_path)
