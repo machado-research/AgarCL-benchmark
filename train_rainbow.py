@@ -322,10 +322,6 @@ def main():
             checkpoint_freq = 50000,
         )
 
-        # dir_of_best_network = os.path.join(args.outdir, "best")
-        # os.makedirs(dir_of_best_network, exist_ok=True)
-        # agent.load(dir_of_best_network)
-
         # run 200 evaluation episodes, each capped at 30 mins of play
         stats = experiments.evaluator.eval_performance(
             env=eval_env,
