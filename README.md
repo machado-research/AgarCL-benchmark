@@ -28,3 +28,7 @@ For SAC or PPO run the following command:
 ```
 python main.py --exp "the path of PPO or SAC" --idxs "The indices of number of runs"
 ```
+For DQN, 
+```
+python train_rainbow.py 
+```
