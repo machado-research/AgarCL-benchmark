@@ -164,6 +164,10 @@ def main():
             "Monitor env. Videos and additional information are saved as output files."
         ),
     )
+    parser.add_argument(
+        "--num-layers", type=int, default=2, help="Number of hidden layers."
+    )
+
     parser.add_argument("--n-best-episodes", type=int, default=5)
     args = parser.parse_args()
 
@@ -212,29 +216,37 @@ def main():
     n_atoms = 51
     v_max = 10
     v_min = -10
-    q_func = nn.Sequential(
-        nn.Conv2d(4, 64, kernel_size=16, stride=1),
-        nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
-        nn.ReLU(),
-        nn.Conv2d(64, 32, kernel_size=8, stride=1),
-        nn.LayerNorm([32, 62, 62]),  # Add LayerNorm after the second Conv2d layer
-        nn.ReLU(),
-        nn.Flatten(),
-        nn.Linear(32 * 62 * 62, 128),  # Adjust the input size according to the output of Conv2d
-        nn.LayerNorm(128),  # Add LayerNorm after the first Linear layer
-        nn.ReLU(),
-        DistributionalDuelingHead(128, n_actions, n_atoms, v_min, v_max),
-    )
-    # q_func = nn.Sequential(
-    #     nn.Conv2d(3, 64, kernel_size=16, stride=1),
-    #     nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
-    #     nn.ReLU(),
-    #     nn.Flatten(),
-    #     nn.Linear(64 * 69 * 69, 256),  # Adjust the input size according to the output of Conv2d
-    #     nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer, 
-    #     nn.ReLU(),
-    #     DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
-    # )
+
+    #Two Layers 
+    if args.num_layers == 2:
+        q_func = nn.Sequential(
+            nn.Conv2d(4, 64, kernel_size=16, stride=1),
+            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.ReLU(),
+            nn.Conv2d(64, 32, kernel_size=8, stride=1),
+            nn.LayerNorm([32, 62, 62]),  # Add LayerNorm after the second Conv2d layer
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(32 * 62 * 62, 128),  # Adjust the input size according to the output of Conv2d
+            nn.LayerNorm(128),  # Add LayerNorm after the first Linear layer
+            nn.ReLU(),
+            DistributionalDuelingHead(128, n_actions, n_atoms, v_min, v_max),
+        )
+    elif args.num_layers == 1: 
+    #One Layer
+        q_func = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=16, stride=1),
+            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(64 * 69 * 69, 256),  # Adjust the input size according to the output of Conv2d
+            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer, 
+            nn.ReLU(),
+            DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
+        )
+    else: 
+        raise ValueError("Invalid number of layers")
+    
     # Noisy nets
     pnn.to_factorized_noisy(q_func, sigma_scale=args.noisy_net_sigma)
     # Turn off explorer
