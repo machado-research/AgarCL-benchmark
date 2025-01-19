@@ -9,6 +9,10 @@ git submodule update
 ```
 
 #### Step 2: Create virtual environment
+
+You can use conda or virtual environment. 
+
+If you want to use a virtual environment: 
 ```
 python -m venv venv
 source venv/bin/activate
@@ -20,12 +24,7 @@ pip install -r requirements.txt
 
 ### Running the benchmarking
 
-For SAC run the following command:
+For SAC or PPO run the following command:
 ```
-python agar_sac.py
-```
-
-For PPO run the following command:
-```
-python agar_ppo.py
+python main.py --exp "the path of PPO or SAC" --idxs "The indices of number of runs"
 ```
