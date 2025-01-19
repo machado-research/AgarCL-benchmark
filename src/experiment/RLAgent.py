@@ -1,11 +1,12 @@
 from src.wrappers.gym import make_env
 from importlib import import_module
 
-def get_agent(name):
+def get_agent(name, use_jax):
+    path = 'src.algorithms.jax' if use_jax else 'src.algorithms.torch'
     if name == 'SAC':
-        mod = import_module('src.algorithms.SAC')
+        mod = import_module(f'{path}.SAC')
     elif name == 'PPO':
-        mod = import_module('src.algorithms.PPO')
+        mod = import_module(f'{path}.PPO')
     else:
         raise ValueError(f'Unknown agent: {name}')
     
@@ -24,16 +25,16 @@ class RLAgent:
         self.env = make_env(exp.env_name, env_config, self.gamma,
                             self.norm_obs, self.norm_reward)
         
-        self.agent = get_agent(self.agent)
+        self.agent = get_agent(self.agent, exp.use_jax)
         self.agent = self.agent(env=self.env, seed=seed, device=device, hypers=self.hypers, collector_config=collector_config,
-                                total_timesteps=exp.total_steps, eval_timesteps=exp.eval_steps, render=render)
+                                total_timesteps=exp.total_steps, render=render)
         
         
     def train(self):
         return self.agent.train()
 
-    def eval(self):
-        return self.agent.eval()
+    def eval(self, obs, save_path):
+        return self.agent.eval(obs, save_path)
     
     def get_collector(self):
         return self.agent.collector

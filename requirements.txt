@@ -17,3 +17,10 @@ ale-py==0.8.1
 AutoROM==0.4.2
 AutoROM.accept-rom-license==0.6.1
 pfrl@git+https://github.com/prabhatnagarajan/pfrl@gymnasium_support
+chex~=0.1
+distrax~=0.1
+flax~=0.10
+jax~=0.4
+jaxlib~=0.4
+optax~=0.2
+tensorflow-probability~=0.24

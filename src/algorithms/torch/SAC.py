@@ -10,8 +10,9 @@ from stable_baselines3.common.buffers import ReplayBuffer
 from PyExpUtils.collection.Collector import Collector
 from PyExpUtils.collection.Sampler import Identity
 
-from src.utils.actions import modify_action, modify_hybrid_action
-from src.utils.sac_networks import *
+from src.utils.torch.actions import modify_action
+from src.utils.torch.sac_networks import ActorNetwork, CriticNetwork
+from src.measurements.torch_norms import get_statistics
 
 
 class SAC:
@@ -22,13 +23,11 @@ class SAC:
                  hypers: dict,
                  collector_config: dict,
                  total_timesteps: int = 1e6,
-                 eval_timesteps: int = 3000,
                  render: bool = False,
                  ) -> None:
 
         self.env = env
         self.total_timesteps = total_timesteps
-        self.eval_timesteps = eval_timesteps
         self.render = render
         self.device = device
         self.autotune = True
@@ -36,7 +35,6 @@ class SAC:
         self.collector = self.collector_init(collector_config)
         self.collector.setIdx(seed)
 
-        self.hybrid = hypers['hybrid']
         self.q_lr = hypers['q_lr']
         self.policy_lr = hypers['policy_lr']
         self.buffer_size = int(hypers['buffer_size'])
@@ -58,40 +56,20 @@ class SAC:
         self.obs_shape = self.env.observation_space.shape
         self.env.observation_space.dtype = np.float32
 
-        if self.hybrid:
-            cont_action_shape = self.env.action_space[0].shape[0]
-            dis_action_shape = self.env.action_space[1].n
-            self.actor = HybridActor(cont_action_shape, dis_action_shape,
-                                     self.obs_shape, self.min_action, self.max_action).to(self.device)
-        else:
-            if len(self.obs_shape) > 1:
-                self.actor = CNNActor(self.action_shape, self.obs_shape,
-                                   self.min_action, self.max_action, self.hidden_dim).to(self.device)
-            else:
-                self.actor = Actor(self.action_shape, self.obs_shape,
-                                   self.min_action, self.max_action).to(self.device)
+        self.actor = ActorNetwork(self.action_shape, self.obs_shape,
+                                  self.min_action, self.max_action, self.hidden_dim).to(self.device)
 
-        if len(self.obs_shape) > 1:
-            self.qf1 = CNNSoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-            self.qf2 = CNNSoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-            self.qf1_target = CNNSoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-            self.qf2_target = CNNSoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-        else:
-            self.qf1 = SoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-            self.qf2 = SoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-            self.qf1_target = SoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-            self.qf2_target = SoftQNetwork(
-                self.obs_shape, self.action_shape).to(self.device)
-
+        self.qf1 = CriticNetwork(
+            self.obs_shape, self.action_shape).to(self.device)
+        self.qf2 = CriticNetwork(
+            self.obs_shape, self.action_shape).to(self.device)
+        self.qf1_target = CriticNetwork(
+            self.obs_shape, self.action_shape).to(self.device)
+        self.qf2_target = CriticNetwork(
+            self.obs_shape, self.action_shape).to(self.device)
         self.qf1_target.load_state_dict(self.qf1.state_dict())
         self.qf2_target.load_state_dict(self.qf2.state_dict())
+
         self.q_optimizer = optim.Adam(list(self.qf1.parameters()) +
                                       list(self.qf2.parameters()), lr=self.q_lr)
         self.actor_optimizer = optim.Adam(
@@ -115,6 +93,8 @@ class SAC:
         )
 
     def train(self):
+        trial_rewards = 0
+        steps = 0
         start_time = time.time()
 
         # TRY NOT TO MODIFY: start the game
@@ -125,25 +105,26 @@ class SAC:
                 action = gym.spaces.Box(-1, 1, self.action_shape,
                                         dtype=np.float32).sample()
             else:
-                action, _, _ = self.actor.get_action(
-                    torch.Tensor(obs).to(self.device))
+                obs = torch.Tensor(obs).to(self.device)
+                action, _, _ = self.actor.get_action(obs)
                 action = action.detach().cpu().numpy().squeeze()
-
-            if self.hybrid:
-                step_action = modify_hybrid_action(action)
-            else:
-                step_action = modify_action(
-                    action, self.min_action, self.max_action)
+            
+            print(action, global_step)
+            step_action = modify_action(
+                action, self.min_action, self.max_action)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, reward, termination, truncation, info = self.env.step(
                 step_action)
 
+            trial_rewards += reward
+            steps += 1
+
             self.collector.collect("reward", reward)
             self.collector.collect("moving_avg", reward)
 
-            # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
-            self.rb.add(obs, next_obs, action, reward, termination, info)
+            real_next_obs = next_obs.copy()
+            self.rb.add(obs, real_next_obs, action, reward, termination, info)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
@@ -152,21 +133,25 @@ class SAC:
             if global_step > self.learning_starts:
                 data = self.rb.sample(self.batch_size)
                 with torch.no_grad():
+                    batch_next_obs = data.next_observations
+                    # batch_next_obs = batch_next_obs.view(-1, *batch_next_obs.shape[2:])
                     next_state_actions, next_state_log_pi, _ = self.actor.get_action(
-                        data.next_observations)
+                        batch_next_obs)
                     qf1_next_target = self.qf1_target(
-                        data.next_observations, next_state_actions)
+                        batch_next_obs, next_state_actions)
                     qf2_next_target = self.qf2_target(
-                        data.next_observations, next_state_actions)
+                        batch_next_obs, next_state_actions)
                     min_qf_next_target = torch.min(
                         qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
                     next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * \
                         self.gamma * (min_qf_next_target).view(-1)
 
+                batch_obs = data.observations
+                # batch_obs = obs.view(-1, *obs.shape[2:])
                 qf1_a_values = self.qf1(
-                    data.observations, data.actions).view(-1)
+                    batch_obs, data.actions).view(-1)
                 qf2_a_values = self.qf2(
-                    data.observations, data.actions).view(-1)
+                    batch_obs, data.actions).view(-1)
                 qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
                 qf2_loss = F.mse_loss(qf2_a_values, next_q_value)
                 qf_loss = qf1_loss + qf2_loss
@@ -180,10 +165,9 @@ class SAC:
                     for _ in range(
                         self.policy_frequency
                     ):  # compensate for the delay by doing 'actor_update_interval' instead of 1
-                        pi, log_pi, _ = self.actor.get_action(
-                            data.observations)
-                        qf1_pi = self.qf1(data.observations, pi)
-                        qf2_pi = self.qf2(data.observations, pi)
+                        pi, log_pi, _ = self.actor.get_action(batch_obs)
+                        qf1_pi = self.qf1(batch_obs, pi)
+                        qf2_pi = self.qf2(batch_obs, pi)
                         min_qf_pi = torch.min(qf1_pi, qf2_pi)
                         actor_loss = ((self.alpha * log_pi) - min_qf_pi).mean()
 
@@ -193,8 +177,7 @@ class SAC:
 
                         if self.autotune:
                             with torch.no_grad():
-                                _, log_pi, _ = self.actor.get_action(
-                                    data.observations)
+                                _, log_pi, _ = self.actor.get_action(batch_obs)
                             alpha_loss = (-self.log_alpha.exp() *
                                           (log_pi + self.target_entropy)).mean()
 
@@ -212,7 +195,7 @@ class SAC:
                         target_param.data.copy_(
                             self.tau * param.data + (1 - self.tau) * target_param.data)
 
-                if global_step % 2000 == 0:
+                if global_step % 10 == 0:
                     self.collector.next_frame()
                     self.collector.collect(
                         "qf1_values", qf1_a_values.mean().item())
@@ -225,43 +208,71 @@ class SAC:
                     self.collector.collect("alpha", alpha)
                     self.collector.collect("alpha_loss", alpha_loss.item())
 
-                    print("SPS:", int(global_step / (time.time() - start_time)))
+                    print("SPS:", int(global_step / (time.time() - start_time)),
+                          " | Reward: ", reward, " | Score: ", trial_rewards/steps)
                     self.collector.collect("SPS", int(global_step /
                                                       (time.time() - start_time)))
 
-        return torch.Tensor(next_obs).to(self.device)
+                    stat_obs = torch.Tensor(obs).to(self.device)
+                    stat_action = torch.Tensor(action).to(self.device).unsqueeze(0)
+                    actor_stats = get_statistics(self.actor, stat_obs)
+                    critic_1_stats = get_statistics(self.qf1, (stat_obs, stat_action))
+                    critic_2_stats = get_statistics(self.qf2, (stat_obs, stat_action))
 
-    def eval(self, obs):
-        eval_avg_reward = 0
-        eval_mov_average = 0
+                    self.collect_stats(actor_stats)
 
-        for _ in range(self.eval_timesteps):
+        return trial_rewards/steps
+
+    def eval(self, last_obs=None):
+        from PIL import Image
+        import cv2
+
+        self.trial_return = 0.0
+
+        start_time = time.time()
+        next_obs = self.env.reset() if last_obs is None else last_obs
+
+        width, height = next_obs.shape[1:]
+        video = cv2.VideoWriter(
+            'results/ppo-default.avi', 0, 1, (width, height))
+        for _ in range(0, self.eval_steps):
+            # ALGO LOGIC: action logic
             with torch.no_grad():
-                action, _, _ = self.actor.get_action(obs)
-                action = action.detach().cpu().numpy().squeeze()
+                action, _, _ = self.actor.get_action(next_obs)
+            action = action.detach().cpu().numpy().squeeze()
+            step_action = modify_action(
+                action, self.min_action, self.max_action)
 
-                if self.hybrid:
-                    step_action = modify_hybrid_action(action)
-                else:
-                    step_action = modify_action(
-                        action, self.min_action, self.max_action)
+            image = next_obs.transpose(1, 2, 0)  # CHW -> HWC
+            image = image.astype('uint8')  # Convert to uint8
+            image = Image.fromarray(image)
+            video.write(image)
 
-                next_obs, reward, termination, truncation, info = self.env.step(
-                    step_action)
+            # TRY NOT TO MODIFY: execute the game and log data.
+            next_obs, reward, _, _, _ = self.env.step(
+                step_action)
 
-                eval_avg_reward += reward
-                eval_mov_average = 0.99 * eval_mov_average + 0.01 * reward
+            next_obs = torch.Tensor(next_obs).to(self.device)
 
-                if self.render:
-                    self.env.render()
+            self.trial_return += reward
 
-                obs = torch.Tensor(next_obs).to(self.device)
+            self.collector.next_frame()
+            self.collector.collect("reward", reward)
 
-                self.collector.collect("eval_reward", reward)
-                self.collector.collect("eval_moving_avg", reward)
+        print(
+            f'After {self.eval_steps} got {self.trial_return} in {time.time() - start_time}')
+        cv2.destroyAllWindows()
+        video.release()
 
-        return eval_avg_reward, eval_mov_average
-
+    def collect_stats(self, stats):
+        self.collector.collect("l2_norm", stats['l2_norm'])
+        self.collector.collect("activation_norm", stats['activation_norm'])
+        self.collector.collect("spectral_norm", stats['spectral_norm'])
+        self.collector.collect("spectral_norm_grad", stats['spectral_norm_grad'])
+        self.collector.collect("hidden_stable_rank", stats['hidden_stable_rank'])
+        self.collector.collect("stable_weight_rank", stats['stable_weight_rank'])
+        self.collector.collect("dormant_units", stats['dormant_units'])
+        
     @staticmethod
     def collector_init(config):
         config['qf1_values'] = Identity()

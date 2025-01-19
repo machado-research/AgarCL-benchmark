@@ -6,6 +6,7 @@ checkpoints/
 results.tar
 .tmp/
 runs/
+tmp/
 videos/
 wandb/
 
