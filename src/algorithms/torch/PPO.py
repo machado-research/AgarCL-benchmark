@@ -14,6 +14,7 @@ from src.utils.torch.actions import modify_action
 from src.utils.torch.ppo_networks import CNNAgent
 from src.measurements.torch_norms import get_statistics
 
+from tqdm import tqdm
 
 class PPO:
     def __init__(self,
@@ -98,7 +99,7 @@ class PPO:
         next_obs = torch.Tensor(next_obs).to(self.device)
         next_done = torch.zeros(self.num_envs).to(self.device)
 
-        for iteration in range(1, self.num_iterations + 1):
+        for iteration in tqdm(range(1, self.num_iterations + 1), desc="Training Progress"):
             # Annealing the rate if instructed to do so.
             if self.anneal_lr:
                 frac = 1.0 - (iteration - 1.0) / self.num_iterations
@@ -114,7 +115,16 @@ class PPO:
                     action, logprob, _, value = self.agent.get_action_and_value(
                         next_obs, action_limits=(self.min_action, self.max_action))
                     self.values[step] = value.flatten()
-
+                    
+                #     obs_image = next_obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
+                #     obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
+                #     img = Image.fromarray(obs_image)
+                #     if not os.path.exists("/home/mamm/ayman/thesis/AgarLE-benchmark/observations"):
+                #         os.makedirs("/home/mamm/ayman/thesis/AgarLE-benchmark/observations")
+                #     img.save(f"/home/mamm/ayman/thesis/AgarLE-benchmark/observations/obs_{global_step}.png")
+                # next_obs = (next_obs - next_obs.mean()) / (next_obs.std() + 1e-8)
+                
+                
                 self.actions[step] = action
                 self.logprobs[step] = logprob
                 action = action.detach().cpu().numpy().squeeze()
@@ -125,7 +135,6 @@ class PPO:
                 # TRY NOT TO MODIFY: execute the game and log data.
                 next_obs, reward, termination, truncation, info = self.env.step(
                     step_action)
-
                 next_done = np.ones((1,)) * termination
                 self.rewards[step] = torch.tensor(
                     reward).to(self.device).view(-1)
@@ -216,8 +225,7 @@ class PPO:
                             ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                     entropy_loss = entropy.mean()
-                    loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef
-
+                    loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef                    
                     self.optimizer.zero_grad()
                     loss.backward()
                     nn.utils.clip_grad_norm_(
@@ -318,7 +326,6 @@ class PPO:
 
     def save_collector(self, exp, save_path):
         from PyExpUtils.results.sqlite import saveCollector
-
         self.collector.reset()
         saveCollector(exp, self.collector, base=save_path)
 

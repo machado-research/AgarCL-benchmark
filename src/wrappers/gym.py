@@ -15,11 +15,11 @@ def make_env(env_name, config, gamma, normalize_observation=False, normalize_rew
     if normalize_observation:
         env = NormalizeObservation(env)
 
-    if normalize_reward:
-        env = NormalizeReward(env, gamma=gamma)
+    # if normalize_reward:
+    #     env = NormalizeReward(env, gamma=gamma)
 
-    if config['render_mode'] == "rgb_array":
-        env = VideoRecorderWrapper(env, config['video_path'])
+    # if config['render_mode'] == "rgb_array":
+    #     env = VideoRecorderWrapper(env, config['video_path'])
     return env
 
 

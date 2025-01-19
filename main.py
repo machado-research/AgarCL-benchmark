@@ -28,6 +28,8 @@ parser.add_argument('-i', '--idxs', nargs='+', type=int, required=True, help = "
 parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}/')
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/')
 parser.add_argument('--silent', action='store_true', default=False)
+parser.add_argument('--render', action='store_true', default=True)
+parser.add_argument('--track', action='store_true', default=False)
 parser.add_argument('--render', action='store_true', default=False)
 parser.add_argument('--gpu', action='store_true', default=False)
 
