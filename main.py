@@ -8,7 +8,7 @@ import argparse
 import logging
 import json
 import socket
-import jax
+# import jax
 
 # saving the results of the experiment
 from PyExpUtils.collection.Sampler import MovingAverage, Subsample, Identity
@@ -23,8 +23,8 @@ warnings.filterwarnings("ignore")
 # -- Command Args --
 # ------------------
 parser = argparse.ArgumentParser()
-parser.add_argument('-e', '--exp', type=str, required=True)
-parser.add_argument('-i', '--idxs', nargs='+', type=int, required=True)
+parser.add_argument('-e', '--exp', type=str, required=True, help = "The Json File of PPO or SAC")
+parser.add_argument('-i', '--idxs', nargs='+', type=int, required=True, help = "The indices of the runs to train: Seeds")
 parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}/')
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/')
 parser.add_argument('--silent', action='store_true', default=False)
