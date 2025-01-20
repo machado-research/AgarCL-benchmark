@@ -8,11 +8,13 @@ import argparse
 import logging
 import json
 import socket
-# import jax
 
 # saving the results of the experiment
 from PyExpUtils.collection.Sampler import MovingAverage, Subsample, Identity
 from PyExpUtils.collection.utils import Pipe
+from PyExpUtils.collection.Collector import Collector
+from PyExpUtils.results.sqlite import saveCollector
+
 from src.experiment import ExperimentModel
 from src.experiment.RLAgent import RLAgent
 
@@ -23,12 +25,13 @@ warnings.filterwarnings("ignore")
 # -- Command Args --
 # ------------------
 parser = argparse.ArgumentParser()
-parser.add_argument('-e', '--exp', type=str, required=True, help = "The Json File of PPO or SAC")
-parser.add_argument('-i', '--idxs', nargs='+', type=int, required=True, help = "The indices of the runs to train: Seeds")
-parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}/')
-parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/')
+parser.add_argument('-e', '--exp', type=str, required=True,
+                    help="The Json File of PPO or SAC")
+parser.add_argument('-i', '--idxs', nargs='+', type=int,
+                    required=True, help="The indices of the runs to train: Seeds")
+parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}')
+parser.add_argument('--checkpoint_path', type=str, default=f'{os.getcwd()}/checkpoints/')
 parser.add_argument('--silent', action='store_true', default=False)
-parser.add_argument('--render', action='store_true', default=True)
 parser.add_argument('--track', action='store_true', default=False)
 parser.add_argument('--render', action='store_true', default=False)
 parser.add_argument('--gpu', action='store_true', default=False)
@@ -37,7 +40,7 @@ args = parser.parse_args()
 
 env_config = json.load(open('env_config.json', 'r'))
 device = torch.device("cuda" if torch.cuda.is_available()
-                         else "cpu")
+                      else "cpu")
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger('exp')
@@ -69,6 +72,9 @@ for idx in indices:
         'dormant_units': Identity(),
     }
 
+    collector = Collector(collector_config)
+    collector.setIdx(idx)
+
     run = exp.getRun(idx)
 
     # set random seeds accordingly
@@ -76,19 +82,38 @@ for idx in indices:
     np.random.seed(idx)
     torch.manual_seed(idx)
     torch.backends.cudnn.deterministic = True
-    
+
+    exp_name = exp.path.split('/')[-1].split('.')[0]
+    checkpoint_path = f'{args.checkpoint_path}/{exp_name}'
 
     # Run the experiment
     start_time = time.time()
 
     rl_agent = RLAgent(exp, idx, env_config=env_config,  device=device,
-                       collector_config=collector_config, render=args.render)
+                       collector=collector, render=args.render)
     
-    score, last_obs = rl_agent.train()
-    
-    save_path = f'{args.save_path}/results'
-    rl_agent.eval(last_obs, save_path=save_path)
+    if os.path.exists(checkpoint_path):
+        print(f'Loading checkpoint from {checkpoint_path}')
+        checkpoint_path = f'{checkpoint_path}/{idx}.pt'
+        rl_agent.load_checkpoint(checkpoint_path)
 
-    logger.debug(f'Run {idx} took {time.time() - start_time:.2f}s and scored {score}')
-    rl_agent.save_collector(exp, args.save_path)
-    
+    score, last_obs = rl_agent.train()
+    logger.debug(f'Train: {time.time() - start_time:.2f}s and scored {score}')
+
+    eval_time = time.time()
+    save_path = f'{args.save_path}/results/videos/{exp_name}'
+    os.makedirs(save_path, exist_ok=True)
+    score = rl_agent.eval(last_obs, 100, save_path=f'{save_path}/{idx}.mp4')
+
+    logger.debug(
+        f'Eval: {time.time() - eval_time:.2f}s and scored {score}, saved at {save_path}')
+
+    # save the results
+    collector.reset()
+    saveCollector(exp, collector, base=args.save_path)
+
+    # save checkpoint
+    checkpoint_path = f'{args.checkpoint_path}/{exp_name}'
+    os.makedirs(checkpoint_path, exist_ok=True)
+    checkpoint_path = f'{checkpoint_path}/{idx}.pt'
+    rl_agent.save_checkpoint(checkpoint_path)

@@ -1,5 +1,5 @@
 {
-    "agent": "SAC",
+    "agent": "DQN",
     "total_steps": 20,
     "env_name": "agario-screen-v0",
     "use_jax": false,

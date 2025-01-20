@@ -1,20 +1,36 @@
 import gymnasium as gym
-
-import time
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
 
+from stable_baselines3 import PPO as sb3_PPO
+from stable_baselines3.common.policies import ActorCriticPolicy
 from PyExpUtils.collection.Collector import Collector
-from PyExpUtils.collection.Sampler import Identity
 
-from src.wrappers.gym import *
-from src.utils.torch.actions import modify_action
-from src.utils.torch.ppo_networks import CNNAgent
-from src.measurements.torch_norms import get_statistics
+from src.wrappers.sb3 import TrainingCallback
+from src.wrappers.gym import SB3Wrapper, ModifyContinuousActionWrapper
+from src.utils.torch.networks import CNNPolicy
 
-from tqdm import tqdm
+
+class CustomActorCriticPolicy(ActorCriticPolicy):
+    def __init__(
+        self,
+        observation_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        lr_schedule: callable,
+        *args,
+        **kwargs,
+    ):
+        # Pass custom feature extractor to the constructor
+        super().__init__(
+            observation_space,
+            action_space,
+            lr_schedule,
+            net_arch=[64],
+            features_extractor_class=CNNPolicy,
+            features_extractor_kwargs={"features_dim": 128},
+            *args,
+            **kwargs,
+        )
+
 
 class PPO:
     def __init__(self,
@@ -22,19 +38,13 @@ class PPO:
                  seed: int,
                  device: str,
                  hypers: dict,
-                 collector_config: dict,
+                 collector: Collector = None,
                  total_timesteps: int = 1e6,
                  render: bool = False,
                  ) -> None:
 
-        self.env = env
-        self.render = render
+        self.collector = collector
         self.total_timesteps = total_timesteps
-        self.num_envs = 1
-        self.eval_steps = 1000
-
-        self.collector = self.collector_init(collector_config)
-        self.collector.setIdx(seed)
 
         # Hyperparameters
         self.num_steps = hypers['num_steps']
@@ -50,292 +60,67 @@ class PPO:
         self.ent_coef = hypers['ent_coef']
         self.vf_coef = hypers['vf_coef']
         self.max_grad_norm = hypers['max_grad_norm']
-        self.hidden_dim = hypers['hidden_size']
         self.target_kl = hypers.get('target_kl', None)
 
-        # to be filled in runtime
-        self.batch_size = int(self.num_envs * self.num_steps)
-        self.minibatch_size = int(self.batch_size // self.num_minibatches)
-        self.num_iterations = self.total_timesteps // self.batch_size
+        self.env = SB3Wrapper(env)
+        self.env = ModifyContinuousActionWrapper(self.env)
 
-        self.device = device
-        self.env.action_space = (gym.spaces.Box(-1, 1, self.env.action_space[0].shape, dtype=np.float32),
-                                 gym.spaces.Discrete(3))
+        self.net = sb3_PPO(CustomActorCriticPolicy,
+                           self.env,
+                           verbose=0,
+                           seed=seed,
+                           device=device,
+                           learning_rate=self.learning_rate,
+                           n_steps=self.num_steps,
+                           batch_size=self.num_minibatches,
+                           n_epochs=self.update_epochs,
+                           gamma=self.gamma,
+                           gae_lambda=self.gae_lambda,
+                           clip_range=self.clip_coef,
+                           ent_coef=self.ent_coef,
+                           vf_coef=self.vf_coef,
+                           max_grad_norm=self.max_grad_norm,
+                           target_kl=self.target_kl,
+                           )
 
-        # Define networks
-        self.max_action = float(self.env.action_space[0].high[0])
-        self.min_action = float(self.env.action_space[0].low[0])
-        self.action_shape = (self.env.action_space[0].shape[0] + 1,)
-        self.obs_shape = self.env.observation_space.shape
-        self.env.observation_space.dtype = np.float32
+    def train(self, time_steps: int = None):
+        callback = TrainingCallback(self.collector)
 
-        self.agent = CNNAgent(
-            self.obs_shape, self.action_shape, self.hidden_dim).to(self.device)
+        total_timesteps = time_steps if time_steps is not None else self.total_timesteps
+        self.net.learn(total_timesteps=total_timesteps,
+                       callback=callback)
+        return callback.get_avg_reward(), callback.get_last_obs()
 
-        self.optimizer = optim.Adam(
-            self.agent.parameters(), lr=self.learning_rate, eps=1e-5)
-
-        # ALGO Logic: Storage setup
-        self.obs = torch.zeros(
-            (self.num_steps, self.num_envs) + self.obs_shape).to(self.device)
-        self.actions = torch.zeros((self.num_steps, self.num_envs) +
-                                   self.action_shape).to(self.device)
-        self.logprobs = torch.zeros(
-            (self.num_steps, self.num_envs)).to(self.device)
-        self.rewards = torch.zeros(
-            (self.num_steps, self.num_envs)).to(self.device)
-        self.dones = torch.zeros(
-            (self.num_steps, self.num_envs)).to(self.device)
-        self.values = torch.zeros(
-            (self.num_steps, self.num_envs)).to(self.device)
-
-    def train(self):
-        self.trial_return = 0.0
-        self.episodes = 0
-        self.steps = 0
-
-        start_time = time.time()
-        next_obs = self.env.reset()
-        next_obs = torch.Tensor(next_obs).to(self.device)
-        next_done = torch.zeros(self.num_envs).to(self.device)
-
-        for iteration in tqdm(range(1, self.num_iterations + 1), desc="Training Progress"):
-            # Annealing the rate if instructed to do so.
-            if self.anneal_lr:
-                frac = 1.0 - (iteration - 1.0) / self.num_iterations
-                lrnow = frac * self.learning_rate
-                self.optimizer.param_groups[0]["lr"] = lrnow
-
-            for step in range(0, self.num_steps):
-                self.obs[step] = next_obs
-                self.dones[step] = next_done
-
-                # ALGO LOGIC: action logic
-                with torch.no_grad():
-                    action, logprob, _, value = self.agent.get_action_and_value(
-                        next_obs, action_limits=(self.min_action, self.max_action))
-                    self.values[step] = value.flatten()
-                    
-                #     obs_image = next_obs.cpu().numpy().squeeze(0)  # Remove the batch dimension
-                #     obs_image = (obs_image).astype(np.uint8)  # Convert to uint8
-                #     img = Image.fromarray(obs_image)
-                #     if not os.path.exists("/home/mamm/ayman/thesis/AgarLE-benchmark/observations"):
-                #         os.makedirs("/home/mamm/ayman/thesis/AgarLE-benchmark/observations")
-                #     img.save(f"/home/mamm/ayman/thesis/AgarLE-benchmark/observations/obs_{global_step}.png")
-                # next_obs = (next_obs - next_obs.mean()) / (next_obs.std() + 1e-8)
-                
-                
-                self.actions[step] = action
-                self.logprobs[step] = logprob
-                action = action.detach().cpu().numpy().squeeze()
-
-                step_action = modify_action(
-                    action, self.min_action, self.max_action)
-
-                # TRY NOT TO MODIFY: execute the game and log data.
-                next_obs, reward, termination, truncation, info = self.env.step(
-                    step_action)
-                next_done = np.ones((1,)) * termination
-                self.rewards[step] = torch.tensor(
-                    reward).to(self.device).view(-1)
-                next_obs, next_done = torch.Tensor(next_obs).to(
-                    self.device), torch.Tensor(next_done).to(self.device)
-
-                self.trial_return += reward
-                self.steps += 1
-
-                self.collector.next_frame()
-                self.collector.collect("reward", reward)
-                self.collector.collect("moving_avg", reward)
-
-            # bootstrap value if not done
-            with torch.no_grad():
-                next_value = self.agent.get_value(next_obs).reshape(1, -1)
-                advantages = torch.zeros_like(self.rewards).to(self.device)
-                lastgaelam = 0
-                for t in reversed(range(self.num_steps)):
-                    if t == self.num_steps - 1:
-                        nextnonterminal = 1.0 - next_done
-                        nextvalues = next_value
-                    else:
-                        nextnonterminal = 1.0 - self.dones[t + 1]
-                        nextvalues = self.values[t + 1]
-                    delta = self.rewards[t] + self.gamma * \
-                        nextvalues * nextnonterminal - self.values[t]
-                    advantages[t] = lastgaelam = delta + self.gamma * \
-                        self.gae_lambda * nextnonterminal * lastgaelam
-                returns = advantages + self.values
-
-            # flatten the batch
-            b_obs = self.obs.reshape((-1,) + self.obs_shape)
-            b_logprobs = self.logprobs.reshape(-1)
-            b_actions = self.actions.reshape((-1,) + self.action_shape)
-            b_advantages = advantages.reshape(-1)
-            b_returns = returns.reshape(-1)
-            b_values = self.values.reshape(-1)
-
-            # Optimizing the policy and value network
-            b_inds = np.arange(self.batch_size)
-            clipfracs = []
-            for epoch in range(self.update_epochs):
-                np.random.shuffle(b_inds)
-                for start in range(0, self.batch_size, self.minibatch_size):
-                    end = start + self.minibatch_size
-                    mb_inds = b_inds[start:end]
-
-                    _, newlogprob, entropy, newvalue = self.agent.get_action_and_value(
-                        b_obs[mb_inds], b_actions[mb_inds], action_limits=(self.min_action, self.max_action))
-                    logratio = newlogprob - b_logprobs[mb_inds]
-                    ratio = logratio.exp()
-
-                    with torch.no_grad():
-                        # calculate approx_kl http://joschu.net/blog/kl-approx.html
-                        old_approx_kl = (-logratio).mean()
-                        approx_kl = ((ratio - 1) - logratio).mean()
-                        clipfracs += [((ratio - 1.0).abs() >
-                                       self.clip_coef).float().mean().item()]
-
-                    mb_advantages = b_advantages[mb_inds]
-                    if self.norm_adv:
-                        mb_advantages = (mb_advantages - mb_advantages.mean()
-                                         ) / (mb_advantages.std() + 1e-8)
-
-                    # Policy loss
-                    pg_loss1 = -mb_advantages * ratio
-                    pg_loss2 = -mb_advantages * \
-                        torch.clamp(ratio, 1 - self.clip_coef,
-                                    1 + self.clip_coef)
-                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
-                    # Value loss
-                    newvalue = newvalue.view(-1)
-                    if self.clip_vloss:
-                        v_loss_unclipped = (newvalue - b_returns[mb_inds]) ** 2
-                        v_clipped = b_values[mb_inds] + torch.clamp(
-                            newvalue - b_values[mb_inds],
-                            -self.clip_coef,
-                            self.clip_coef,
-                        )
-                        v_loss_clipped = (v_clipped - b_returns[mb_inds]) ** 2
-                        v_loss_max = torch.max(
-                            v_loss_unclipped, v_loss_clipped)
-                        v_loss = 0.5 * v_loss_max.mean()
-                    else:
-                        v_loss = 0.5 * \
-                            ((newvalue - b_returns[mb_inds]) ** 2).mean()
-
-                    entropy_loss = entropy.mean()
-                    loss = pg_loss - self.ent_coef * entropy_loss + v_loss * self.vf_coef                    
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    nn.utils.clip_grad_norm_(
-                        self.agent.parameters(), self.max_grad_norm)
-                    self.optimizer.step()
-
-                # stats = get_statistics(
-                #     self.agent, (b_obs[mb_inds], b_actions[mb_inds]))
-                # print(stats)
-                # for key in stats:
-                #     self.collector.collect(key, stats[key])
-
-                if self.target_kl is not None and approx_kl > self.target_kl:
-                    break
-
-            y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
-            var_y = np.var(y_true)
-            explained_var = np.nan if var_y == 0 else 1 - \
-                np.var(y_true - y_pred) / var_y
-
-            # TRY NOT TO MODIFY: record rewards for plotting purposes
-            # self.collector.next_frame()
-            self.collector.collect("lr", self.optimizer.param_groups[0]["lr"])
-            self.collector.collect("value_loss", v_loss.item())
-            self.collector.collect("policy_loss", pg_loss.item())
-            self.collector.collect("entropy_loss", entropy_loss.item())
-            self.collector.collect("old_approx_kl", old_approx_kl.item())
-            self.collector.collect("approx_kl", approx_kl.item())
-            self.collector.collect("clipfrac", np.mean(clipfracs))
-            self.collector.collect("explained_variance", explained_var)
-
-            print("SPS:", int(self.steps / (time.time() - start_time)), self.steps)
-            self.collector.collect("SPS", int(
-                self.steps / (time.time() - start_time)))
-
-        return self.trial_return / self.steps, next_obs
-
-    def eval(self, last_obs=None, save_path=None):
+    def eval(self, obs: np.ndarray, eval_steps: int, save_path: str):
         import cv2
+        cumulative_reward = 0
 
-        self.trial_return = 0.0
-
-        start_time = time.time()
-        next_obs = self.env.reset() if last_obs is None else last_obs
-
-        width, height = next_obs.shape[1], next_obs.shape[2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # or use 'avc1' for H.264 encoding
+        width, height = obs.shape[1], obs.shape[2]
+        # or use 'avc1' for H.264 encoding
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video = cv2.VideoWriter(
-            f'{save_path}/ppo-default.mp4', 
-            fourcc, 
+            save_path,
+            fourcc,
             30,  # framerate - increased to 30fps for smoother video
             (width, height)
         )
-        for step in range(0, 10):
-            # ALGO LOGIC: action logic
-            with torch.no_grad():
-                action, _, _, _ = self.agent.get_action_and_value(
-                    next_obs, action_limits=(self.min_action, self.max_action))
 
-            action = action.detach().cpu().numpy().squeeze()
-            step_action = modify_action(
-                action, self.min_action, self.max_action)
-
-            image = next_obs[0].detach().cpu().numpy()
-            image = image.astype('uint8')  # Convert to uint8
-            # image = Image.fromarray(image)
+        for _ in range(eval_steps):
+            action, _ = self.net.predict(obs)
+            image = 1 - obs[0]  # Convert to uint8
+            image = image.astype('uint8') * 255  # Convert to uint8
             video.write(image)
 
-            # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, _, _, _ = self.env.step(
-                step_action)
+            obs, reward, done, trunc, _ = self.env.step(action)
+            cumulative_reward += reward
 
-            next_obs = torch.Tensor(next_obs).to(self.device)
-
-            self.trial_return += reward
-
-            self.collector.next_frame()
-            self.collector.collect("reward", reward)
-
-        print(
-            f'After {self.eval_steps} got {self.trial_return} in {time.time() - start_time}')
-        print(f'Video saved at {save_path}/ppo-default.mp4')
         cv2.destroyAllWindows()
         video.release()
 
-    @staticmethod
-    def collector_init(config):
-        config['lr'] = Identity()
-        config['value_loss'] = Identity()
-        config['policy_loss'] = Identity()
-        config['entropy_loss'] = Identity()
-        config['old_approx_kl'] = Identity()
-        config['approx_kl'] = Identity()
-        config['clipfrac'] = Identity()
-        config['explained_variance'] = Identity()
+        return cumulative_reward  # need to collect episodic reward, not reward per step
 
-        return Collector(config)
+    def save_checkpoint(self, path: str):
+        self.net.save(path)
 
-    def save_collector(self, exp, save_path):
-        from PyExpUtils.results.sqlite import saveCollector
-        self.collector.reset()
-        saveCollector(exp, self.collector, base=save_path)
-
-    def load_checkpoint(self, path):
-        checkpoint = torch.load(path)
-        self.agent.load_state_dict(checkpoint['agent_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-
-    def save_checkpoint(self, path):
-        torch.save({
-            'agent_state_dict': self.agent.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-        }, path)
+    def load_checkpoint(self, path: str):
+        self.net.load(path)

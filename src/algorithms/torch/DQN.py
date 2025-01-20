@@ -1,16 +1,16 @@
 import gymnasium as gym
 import numpy as np
 
-from stable_baselines3 import SAC as sb3_SAC
-from stable_baselines3.sac.policies import SACPolicy
+from stable_baselines3 import DQN as sb3_DQN
+from stable_baselines3.dqn.policies import DQNPolicy
 from PyExpUtils.collection.Collector import Collector
 
 from src.wrappers.sb3 import TrainingCallback
-from src.wrappers.gym import SB3Wrapper, ModifyContinuousActionWrapper
+from src.wrappers.gym import SB3Wrapper, ModifyDiscreteActionWrapper
 from src.utils.torch.networks import CNNPolicy
 
 
-class CustomActorCriticPolicy(SACPolicy):
+class CustomActorCriticPolicy(DQNPolicy):
     def __init__(
         self,
         observation_space: gym.spaces.Space,
@@ -27,13 +27,12 @@ class CustomActorCriticPolicy(SACPolicy):
             net_arch=[64],
             features_extractor_class=CNNPolicy,
             features_extractor_kwargs={"features_dim": 128},
-            share_features_extractor=True,
             *args,
             **kwargs,
         )
 
 
-class SAC:
+class DQN:
     def __init__(self,
                  env: gym.Env,
                  seed: int,
@@ -56,9 +55,9 @@ class SAC:
         self.tau = hypers['tau']
 
         self.env = SB3Wrapper(env)
-        self.env = ModifyContinuousActionWrapper(self.env)
+        self.env = ModifyDiscreteActionWrapper(self.env)
 
-        self.net = sb3_SAC(CustomActorCriticPolicy,
+        self.net = sb3_DQN(CustomActorCriticPolicy,
                            self.env,
                            verbose=0,
                            learning_rate=self.lr,

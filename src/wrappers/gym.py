@@ -20,6 +20,8 @@ def make_env(env_name, config, gamma, normalize_observation=False, normalize_rew
 
     # if config['render_mode'] == "rgb_array":
     #     env = VideoRecorderWrapper(env, config['video_path'])
+
+    # env = ModifyObservationWrapper(env)
     return env
 
 
@@ -132,8 +134,8 @@ class TransformObservation(gym.ObservationWrapper):
 
     def reset(self, **kwargs):
         """Resets the environment, returning a modified observation using :meth:`self.observation`."""
-        obs = self.env.reset(**kwargs)
-        return self.observation(obs)
+        obs, _ = self.env.reset(**kwargs)
+        return self.observation(obs), {}
 
     def step(self, action):
         """Returns a modified observation using :meth:`self.observation` after calling :meth:`env.step`."""
@@ -218,8 +220,8 @@ class FlattenObservation(gym.ObservationWrapper):
 
     def reset(self, **kwargs):
         """Resets the environment, returning a modified observation using :meth:`self.observation`."""
-        obs = self.env.reset(**kwargs)
-        return self.observation(obs)
+        obs, _ = self.env.reset(**kwargs)
+        return self.observation(obs), {}
 
     def step(self, action):
         """Returns a modified observation using :meth:`self.observation` after calling :meth:`env.step`."""
@@ -238,10 +240,10 @@ class VideoRecorderWrapper(gym.Wrapper):
         self.video_writer = None
 
     def reset(self, **kwargs):
-        observation = self.env.reset(**kwargs)
+        observation, _ = self.env.reset(**kwargs)
         if self.env.render_mode == "rgb_array":
             self.start_video_writer()
-        return observation
+        return observation, {}
 
     def start_video_writer(self):
         if self.video_writer is None:
@@ -271,3 +273,80 @@ class VideoRecorderWrapper(gym.Wrapper):
     def close(self):
         self.close_video_writer()
         self.env.close()
+
+
+class SB3Wrapper(gym.core.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = env.observation_space
+        self.action_space = env.action_space
+
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        return obs, {}
+
+    def step(self, action):
+        return self.env.step(action)
+
+
+class ModifyContinuousActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # Redefining the action space
+        self.action_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
+        self.low, self.high = self.action_space.low, self.action_space.high
+
+    def action(self, action):
+        cont_action, dis_action = action[:-1], action[-1]
+        range_array = np.linspace(-1, 1, 4)
+        insert_index = np.searchsorted(range_array, dis_action)
+        dis_action = insert_index - 1
+        dis_action = np.maximum(dis_action, 0)
+        return ([((cont_action), dis_action)])
+
+    def step(self, action):
+        return self.env.step(self.action(action))
+
+
+class ModifyDiscreteActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.action_space = gym.spaces.Discrete(8)
+
+    def action(self, action):
+        # Map the discrete action to (dx, dy)
+        action_mappings = [
+            np.array([0, 1], dtype=np.float32),   # Up
+            np.array([1, 1], dtype=np.float32),   # Up-Right
+            np.array([1, 0], dtype=np.float32),   # Right
+            np.array([1, -1], dtype=np.float32),  # Down-Right
+            np.array([0, -1], dtype=np.float32),  # Down
+            np.array([-1, -1], dtype=np.float32),  # Down-Left
+            np.array([-1, 0], dtype=np.float32),  # Left
+            np.array([-1, 1], dtype=np.float32),  # Up-Left
+        ]
+        # Ensure action is within valid range
+        assert 0 <= action < len(action_mappings)
+        dx_dy = action_mappings[action]
+        # Discrete action is always 0 (noop)
+        return (dx_dy, 0)
+
+    def step(self, action):
+        return self.env.step(self.action(action))
+
+
+class ModifyObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = env.observation_space
+
+    def observation(self, observation):
+        print(observation.shape)
+        modified_observation = observation.transpose(0, 3, 1, 2)[0]
+        return modified_observation
+
+    def reset(self, **kwargs):
+        obs, _ = self.env.reset(**kwargs)
+        obs = self.observation(obs)
+        return obs, {}
