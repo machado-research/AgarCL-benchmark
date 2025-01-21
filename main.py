@@ -10,8 +10,7 @@ import json
 import socket
 
 # saving the results of the experiment
-from PyExpUtils.collection.Sampler import MovingAverage, Subsample, Identity
-from PyExpUtils.collection.utils import Pipe
+from PyExpUtils.collection.Sampler import Subsample, Identity
 from PyExpUtils.collection.Collector import Collector
 from PyExpUtils.results.sqlite import saveCollector
 
@@ -58,12 +57,9 @@ indices = args.idxs
 
 for idx in indices:
     collector_config = {
-        'eval_reward': Identity(),
         'reward': Subsample(100),
-        'moving_avg': Pipe(
-            MovingAverage(0.999),
-            Subsample(100),
-        ),
+        'steps': Identity(),
+        'eval_reward': Identity()
     }
 
     collector = Collector(collector_config)
@@ -83,7 +79,7 @@ for idx in indices:
     os.makedirs(checkpoint_path, exist_ok=True)
     checkpoint_path = f'{checkpoint_path}/{idx}.zip'
 
-    render_path = f'{args.save_path}/results/videos/{exp_name}'
+    render_path = f'{args.save_path}/videos/{exp_name}'
     os.makedirs(render_path, exist_ok=True)
 
     # Run the experiment

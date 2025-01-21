@@ -13,12 +13,13 @@ class TrainingCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         #TODO: add the measurements here
-        reward = self.locals['rewards']
+        reward = float(self.locals['rewards'])
         self.last_obs = self.locals['new_obs'].squeeze(1)
 
         self.collector.next_frame()
         self.collector.collect('reward', reward)
-        self.collector.collect('moving_avg', reward)
+        if self.total_steps % 100 == 0:
+            self.collector.collect('steps', 100)
 
         self.cumulative_reward += reward
         self.total_steps += 1

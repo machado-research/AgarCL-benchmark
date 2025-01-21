@@ -9,6 +9,7 @@ runs/
 tmp/
 videos/
 wandb/
+plots/
 
 # ignore python caches
 .venv/

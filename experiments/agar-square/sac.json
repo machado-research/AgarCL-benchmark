@@ -1,6 +1,7 @@
 {
     "agent": "SAC",
-    "total_steps": 20,
+    "total_steps": 100,
+    "eval_steps": 100,
     "env_name": "agario-screen-v0",
     "use_jax": false,
     
@@ -9,7 +10,7 @@
         "gamma": [0.99],
         "tau": [0.005],
         "buffer_size": 100000,
-        "learning_starts": 10,
+        "learning_starts": 80,
         "batch_size": 64,
         "num_layers": 2,
         "hidden_size": 256,

@@ -1,7 +1,7 @@
 {
     "agent": "PPO",
-    "total_steps": 100,
-    "eval_steps": 100,
+    "total_steps": 100000,
+    "eval_steps": 3000,
     "env_name": "agario-screen-v0",
     "use_jax": false,
 
@@ -16,7 +16,7 @@
         "clip_coef": [0.2],
         "clip_vloss": false,
         "anneal_lr": true,
-        "num_steps": 20,
+        "num_steps": 2048,
         "num_minibatches": 64,
         "num_layers": 2,
         "hidden_size": 64,
