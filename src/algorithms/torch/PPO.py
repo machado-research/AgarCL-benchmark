@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import cv2
 
 from stable_baselines3 import PPO as sb3_PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
@@ -40,11 +41,12 @@ class PPO:
                  hypers: dict,
                  collector: Collector = None,
                  total_timesteps: int = 1e6,
-                 render: bool = False,
+                 eval_steps: int = 3000,
                  ) -> None:
 
         self.collector = collector
         self.total_timesteps = total_timesteps
+        self.eval_steps = eval_steps
 
         # Hyperparameters
         self.num_steps = hypers['num_steps']
@@ -80,7 +82,7 @@ class PPO:
                            ent_coef=self.ent_coef,
                            vf_coef=self.vf_coef,
                            max_grad_norm=self.max_grad_norm,
-                           target_kl=self.target_kl,
+                           #    target_kl=self.target_kl,
                            )
 
     def train(self, time_steps: int = None):
@@ -91,9 +93,11 @@ class PPO:
                        callback=callback)
         return callback.get_avg_reward(), callback.get_last_obs()
 
-    def eval(self, obs: np.ndarray, eval_steps: int, save_path: str):
-        import cv2
+    def eval(self, obs: np.ndarray, save_path: str):
         cumulative_reward = 0
+
+        if obs is None:
+            obs, _ = self.env.reset()
 
         width, height = obs.shape[1], obs.shape[2]
         # or use 'avc1' for H.264 encoding
@@ -105,14 +109,18 @@ class PPO:
             (width, height)
         )
 
-        for _ in range(eval_steps):
+        for _ in range(self.eval_steps):
             action, _ = self.net.predict(obs)
-            image = 1 - obs[0]  # Convert to uint8
-            image = image.astype('uint8') * 255  # Convert to uint8
+            image = obs[0]  # Convert to uint8
+            image = image.astype('uint8')  # Convert to uint8
             video.write(image)
 
             obs, reward, done, trunc, _ = self.env.step(action)
             cumulative_reward += reward
+            
+            # collect reward
+            self.collector.next_frame()
+            self.collector.collect('eval_reward', reward)
 
         cv2.destroyAllWindows()
         video.release()

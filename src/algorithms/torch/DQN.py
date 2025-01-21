@@ -1,5 +1,6 @@
 import gymnasium as gym
 import numpy as np
+import cv2
 
 from stable_baselines3 import DQN as sb3_DQN
 from stable_baselines3.dqn.policies import DQNPolicy
@@ -40,11 +41,12 @@ class DQN:
                  hypers: dict,
                  collector: Collector = None,
                  total_timesteps: int = 1e6,
-                 render: bool = False,
+                 eval_steps: int = 3000,
                  ) -> None:
 
         self.collector = collector
         self.total_timesteps = total_timesteps
+        self.eval_steps = eval_steps
 
         self.lr = hypers['lr']
         self.buffer_size = int(hypers['buffer_size'])
@@ -75,12 +77,13 @@ class DQN:
 
         total_timesteps = time_steps if time_steps is not None else self.total_timesteps
         self.net.learn(total_timesteps=total_timesteps,
-                       callback=callback)
+                       callback=callback, reset_num_timesteps=False)
         return callback.get_avg_reward(), callback.get_last_obs()
 
-    def eval(self, obs: np.ndarray, eval_steps: int, save_path: str):
-        import cv2
+    def eval(self, obs: np.ndarray, save_path: str):
         cumulative_reward = 0
+        if obs is None:
+            obs, _ = self.env.reset()
 
         width, height = obs.shape[1], obs.shape[2]
         # or use 'avc1' for H.264 encoding
@@ -92,14 +95,18 @@ class DQN:
             (width, height)
         )
 
-        for _ in range(eval_steps):
+        for _ in range(self.eval_steps):
             action, _ = self.net.predict(obs)
-            image = 1 - obs[0]  # Convert to uint8
-            image = image.astype('uint8') * 255  # Convert to uint8
+            image = obs[0]  # Convert to uint8
+            image = image.astype('uint8')  # Convert to uint8
             video.write(image)
 
             obs, reward, done, trunc, _ = self.env.step(action)
             cumulative_reward += reward
+            
+            # collect reward
+            self.collector.next_frame()
+            self.collector.collect('eval_reward', reward)
 
         cv2.destroyAllWindows()
         video.release()

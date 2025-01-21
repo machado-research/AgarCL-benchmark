@@ -30,11 +30,12 @@ parser.add_argument('-e', '--exp', type=str, required=True,
 parser.add_argument('-i', '--idxs', nargs='+', type=int,
                     required=True, help="The indices of the runs to train: Seeds")
 parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}')
-parser.add_argument('--checkpoint_path', type=str, default=f'{os.getcwd()}/checkpoints/')
+parser.add_argument('--checkpoint_path', type=str,
+                    default=f'{os.getcwd()}/checkpoints')
 parser.add_argument('--silent', action='store_true', default=False)
 parser.add_argument('--track', action='store_true', default=False)
 parser.add_argument('--render', action='store_true', default=False)
-parser.add_argument('--gpu', action='store_true', default=False)
+parser.add_argument('--checkpoint', action='store_true', default=False)
 
 args = parser.parse_args()
 
@@ -57,19 +58,12 @@ indices = args.idxs
 
 for idx in indices:
     collector_config = {
-        'SPS': Identity(),
-        'reward': Subsample(500),
+        'eval_reward': Identity(),
+        'reward': Subsample(100),
         'moving_avg': Pipe(
             MovingAverage(0.999),
-            Subsample(500),
+            Subsample(100),
         ),
-        'l2_norm': Identity(),
-        'activation_norm': Identity(),
-        'spectral_norm': Identity(),
-        'spectral_norm_grad': Identity(),
-        'hidden_stable_rank': Identity(),
-        'stable_weight_rank': Identity(),
-        'dormant_units': Identity(),
     }
 
     collector = Collector(collector_config)
@@ -81,39 +75,38 @@ for idx in indices:
     random.seed(idx)
     np.random.seed(idx)
     torch.manual_seed(idx)
+    torch.set_num_threads(8) # set the number of threads for torch
     torch.backends.cudnn.deterministic = True
 
-    exp_name = exp.path.split('/')[-1].split('.')[0]
+    exp_name = '/'.join(exp.path.replace('.json', '').split('/')[1:])
     checkpoint_path = f'{args.checkpoint_path}/{exp_name}'
+    os.makedirs(checkpoint_path, exist_ok=True)
+    checkpoint_path = f'{checkpoint_path}/{idx}.zip'
+
+    render_path = f'{args.save_path}/results/videos/{exp_name}'
+    os.makedirs(render_path, exist_ok=True)
 
     # Run the experiment
     start_time = time.time()
-
     rl_agent = RLAgent(exp, idx, env_config=env_config,  device=device,
                        collector=collector, render=args.render)
-    
-    if os.path.exists(checkpoint_path):
+
+    if os.path.exists(checkpoint_path) and args.checkpoint:
         print(f'Loading checkpoint from {checkpoint_path}')
-        checkpoint_path = f'{checkpoint_path}/{idx}.pt'
         rl_agent.load_checkpoint(checkpoint_path)
 
     score, last_obs = rl_agent.train()
     logger.debug(f'Train: {time.time() - start_time:.2f}s and scored {score}')
 
     eval_time = time.time()
-    save_path = f'{args.save_path}/results/videos/{exp_name}'
-    os.makedirs(save_path, exist_ok=True)
-    score = rl_agent.eval(last_obs, 100, save_path=f'{save_path}/{idx}.mp4')
+    score = rl_agent.eval(save_path=f'{render_path}/{idx}.mp4')
 
     logger.debug(
-        f'Eval: {time.time() - eval_time:.2f}s and scored {score}, saved at {save_path}')
+        f'Eval: {time.time() - eval_time:.2f}s and scored {score}, saved at {render_path}/{idx}.mp4')
 
     # save the results
     collector.reset()
     saveCollector(exp, collector, base=args.save_path)
 
     # save checkpoint
-    checkpoint_path = f'{args.checkpoint_path}/{exp_name}'
-    os.makedirs(checkpoint_path, exist_ok=True)
-    checkpoint_path = f'{checkpoint_path}/{idx}.pt'
     rl_agent.save_checkpoint(checkpoint_path)
