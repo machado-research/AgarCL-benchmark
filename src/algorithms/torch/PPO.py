@@ -69,7 +69,7 @@ class PPO:
 
         self.net = sb3_PPO(CustomActorCriticPolicy,
                            self.env,
-                           verbose=0,
+                           verbose=1,
                            seed=seed,
                            device=device,
                            learning_rate=self.learning_rate,
@@ -84,7 +84,7 @@ class PPO:
                            max_grad_norm=self.max_grad_norm,
                            #    target_kl=self.target_kl,
                            )
-
+        
     def train(self, time_steps: int = None):
         callback = TrainingCallback(self.collector)
 

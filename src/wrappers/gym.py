@@ -294,16 +294,16 @@ class ModifyContinuousActionWrapper(gym.ActionWrapper):
         super().__init__(env)
         # Redefining the action space
         self.action_space = gym.spaces.Box(
-            low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
+            low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         self.low, self.high = self.action_space.low, self.action_space.high
 
     def action(self, action):
-        cont_action, dis_action = action[:-1], action[-1]
-        range_array = np.linspace(-1, 1, 4)
-        insert_index = np.searchsorted(range_array, dis_action)
-        dis_action = insert_index - 1
-        dis_action = np.maximum(dis_action, 0)
-        return ([((cont_action), dis_action)])
+        # cont_action, dis_action = action[:-1], action[-1]
+        # range_array = np.linspace(-1, 1, 4)
+        # insert_index = np.searchsorted(range_array, dis_action)
+        # dis_action = insert_index - 1
+        # dis_action = np.maximum(dis_action, 0)
+        return ([((action), 0)])
 
     def step(self, action):
         return self.env.step(self.action(action))
