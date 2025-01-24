@@ -13,7 +13,7 @@ import torch.optim as optim
 import tyro
 from stable_baselines3.common.buffers import ReplayBuffer
 
-from src.wrappers.gym import SB3Wrapper, ModifyActionWrapperCRL
+from src.wrappers.gym import SB3Wrapper, ModifyActionWrapperCRL, FlattenObservationWrapper
 from torch.utils.tensorboard import SummaryWriter
 #from src.wrappers.gym import make_env
 
@@ -99,7 +99,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     print( args.env_id )
     # env setup
-    # envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)])
+    #envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)])
     envs = make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)
 
     # Print the type of envs
@@ -110,9 +110,12 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     
     envs = SB3Wrapper(envs)
     envs =  ModifyActionWrapperCRL(envs)
+    envs = FlattenObservationWrapper(envs)
+
     envs.single_action_space = envs.action_space
     envs.num_envs = 1
     envs.single_observation_space = envs.observation_space
+
     assert isinstance(envs.action_space, gym.spaces.Box), "only continuous action space is supported"
 
     max_action = float(envs.action_space.high[0])
@@ -156,11 +159,21 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             actions = np.array([envs.action_space.sample() for _ in range(envs.num_envs)])
         else:
             actions, _, _ = actor.get_action(torch.Tensor(obs).to(device))
+            print( actions , type(actions) )
             actions = actions.detach().cpu().numpy()
 
         actions = actions[-1] # only one env is used
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
+
+
+
+        print(f"Observation space: {envs.observation_space}")
+        print(f"Observation shape: {envs.observation_space.shape}")
+        print(f"Action space: {envs.action_space}")
+        print(f"Action space high: {envs.action_space.high}")
+        print(f"Action space low: {envs.action_space.low}")
+
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
@@ -192,6 +205,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             data = rb.sample(args.batch_size)
             with torch.no_grad():
                 next_state_actions, next_state_log_pi, _ = actor.get_action(data.next_observations)
+                print( next_state_actions, type(next_state_actions) )
+
                 qf1_next_target = qf1_target(data.next_observations, next_state_actions)
                 qf2_next_target = qf2_target(data.next_observations, next_state_actions)
                 min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_log_pi
