@@ -1,7 +1,7 @@
 {
     "agent": "PPO",
     "total_steps": 100000,
-    "eval_steps": 3000,
+    "eval_steps": 500,
     "env_name": "agario-screen-v0",
     "use_jax": false,
 

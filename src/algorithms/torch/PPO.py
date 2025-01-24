@@ -112,6 +112,7 @@ class PPO:
         for _ in range(self.eval_steps):
             action, _ = self.net.predict(obs)
             image = obs[0]  # Convert to uint8
+            image = np.mean(image, axis=0)  # Convert to grayscale
             image = image.astype('uint8')  # Convert to uint8
             video.write(image)
 
