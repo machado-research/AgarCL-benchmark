@@ -342,6 +342,22 @@ class ModifyActionWrapperCRL(gym.ActionWrapper):
         return self.env.step(self.action(action))
 
 
+class FlattenObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # Update the observation space to reflect the flattened shape
+        flat_shape = (np.prod(env.observation_space.shape),)
+        self.observation_space = gym.spaces.Box(
+            low=env.observation_space.low.min(),
+            high=env.observation_space.high.max(),
+            shape=flat_shape,
+            dtype=env.observation_space.dtype,
+        )
+
+    def observation(self, observation):
+        # Flatten the observation
+        return observation.flatten()
+    
 class ModifyDiscreteActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
