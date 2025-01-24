@@ -57,9 +57,10 @@ indices = args.idxs
 
 for idx in indices:
     collector_config = {
-        'reward': Subsample(100),
+        'reward': Identity(),
         'steps': Identity(),
-        'eval_reward': Identity()
+        'eval_reward': Identity(),
+        'episode_reward': Identity()
     }
 
     collector = Collector(collector_config)
