@@ -319,6 +319,27 @@ class ModifyContinuousActionWrapper(gym.ActionWrapper):
 
     def step(self, action):
         return self.env.step(self.action(action))
+    
+class ModifyActionWrapperCRL(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # Redefining the action space
+        self.action_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
+        self.low, self.high = self.action_space.low, self.action_space.high
+
+    def action(self, action):
+        # Split continuous and discrete components
+        cont_action = action[:2]
+        dis_action = action[2]
+        range_array = np.linspace(-1.0, 1.0, 4)
+        discrete_index = np.searchsorted(range_array, dis_action, side="right") - 1
+        dis_action = max(0, min(discrete_index, 2))
+        dis_action = int(dis_action)
+        return (np.array(cont_action, dtype=np.float32), dis_action)
+
+    def step(self, action):
+        return self.env.step(self.action(action))
 
 
 class ModifyDiscreteActionWrapper(gym.ActionWrapper):
