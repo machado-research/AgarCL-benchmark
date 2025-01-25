@@ -24,17 +24,17 @@ from cleanrl.cleanrl.sac_continuous_action import Actor, Args, SoftQNetwork
 def make_env(env_id, seed, idx, capture_video, run_name, **kwargs):
     #return gym.make(env_id, **kwargs)
     def thunk():
-        if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode="rgb_array")
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id, **kwargs)
+        # if capture_video and idx == 0:
+        #     env = gym.make(env_id, render_mode="rgb_array")
+        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+        # else:
+        env = gym.make(env_id, **kwargs)
 
         if ( env_id == "agario-screen-v0" ):
             env = SB3Wrapper(env)
             env = ModifyActionWrapperCRL(env)
             env = FlattenObservationWrapper(env)
-            
+
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env.action_space.seed(seed)
   
@@ -99,10 +99,10 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     # env setup
    # envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
-    envs = gym.vector.AsyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
+    import json
+    env_config = json.load(open('env_config.json', 'r'))
 
-    # envs = SB3Wrapper(envs)
-    # envs = ModifyActionWrapperCRL(envs)
+    envs = gym.vector.AsyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)])
 
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
