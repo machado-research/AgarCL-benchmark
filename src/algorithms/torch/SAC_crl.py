@@ -22,17 +22,25 @@ from cleanrl.cleanrl.sac_continuous_action import Actor, Args, SoftQNetwork
 
 
 def make_env(env_id, seed, idx, capture_video, run_name, **kwargs):
-    return gym.make(env_id, **kwargs)
+    #return gym.make(env_id, **kwargs)
     def thunk():
-        return gym.make(env_id, **kwargs)
-        # if capture_video and idx == 0:
-        #     env = gym.make(env_id, render_mode="rgb_array")
-        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        # else:
-        #     env = gym.make(env_id)
-        # env = gym.wrappers.RecordEpisodeStatistics(env)
-        # env.action_space.seed(seed)
-        # return env
+        if capture_video and idx == 0:
+            env = gym.make(env_id, render_mode="rgb_array")
+            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+        else:
+            env = gym.make(env_id, **kwargs)
+
+        if ( env_id == "agario-screen-v0" ):
+            env = SB3Wrapper(env)
+            env = ModifyActionWrapperCRL(env)
+            env = FlattenObservationWrapper(env)
+            
+        env = gym.wrappers.RecordEpisodeStatistics(env)
+        env.action_space.seed(seed)
+  
+        obs = env.reset()
+        print(f"Reset output: {obs}")  # Debugging
+        return env
 
     return thunk
 
@@ -57,18 +65,10 @@ if __name__ == "__main__":
 poetry run pip install "stable_baselines3==2.0.0a1"
 """
         )
-    
-    Args.env_id = "agario-screen-v0"
-    print( Args.env_id )
 
     args = tyro.cli(Args)
 
     args.env_id = "agario-screen-v0"
-    import json
-    env_config = json.load(open('env_config.json', 'r'))
-
-    
-    # For some reason, need to modify the env_id here
 
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
@@ -97,32 +97,18 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    print( args.env_id )
     # env setup
-    #envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)])
-    envs = make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)
+   # envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
+    envs = gym.vector.AsyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
 
-    # Print the type of envs
-    print(f"Type of envs: {type(envs)}")
+    # envs = SB3Wrapper(envs)
+    # envs = ModifyActionWrapperCRL(envs)
 
-    # Print all attributes of envs
-    print(f"Attributes of envs: {dir(envs)}")
-    
-    envs = SB3Wrapper(envs)
-    envs =  ModifyActionWrapperCRL(envs)
-    envs = FlattenObservationWrapper(envs)
+    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    envs.single_action_space = envs.action_space
-    envs.num_envs = 1
-    envs.single_observation_space = envs.observation_space
+    max_action = float(envs.single_action_space.high[0])
 
-    assert isinstance(envs.action_space, gym.spaces.Box), "only continuous action space is supported"
-
-    max_action = float(envs.action_space.high[0])
-
-    # Override Actor class with our AgarIOActor
-    actor = AgarIOActor(envs).to(device)
-
+    actor = Actor(envs).to(device)
     qf1 = SoftQNetwork(envs).to(device)
     qf2 = SoftQNetwork(envs).to(device)
     qf1_target = SoftQNetwork(envs).to(device)
@@ -141,11 +127,11 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     else:
         alpha = args.alpha
 
-    envs.observation_space.dtype = np.float32
+    envs.single_observation_space.dtype = np.float32
     rb = ReplayBuffer(
         args.buffer_size,
-        envs.observation_space,
-        envs.action_space,
+        envs.single_observation_space,
+        envs.single_action_space,
         device,
         handle_timeout_termination=False,
     )
@@ -156,24 +142,13 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     for global_step in range(args.total_timesteps):
         # ALGO LOGIC: put action logic here
         if global_step < args.learning_starts:
-            actions = np.array([envs.action_space.sample() for _ in range(envs.num_envs)])
+            actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
         else:
             actions, _, _ = actor.get_action(torch.Tensor(obs).to(device))
-            print( actions , type(actions) )
             actions = actions.detach().cpu().numpy()
 
-        actions = actions[-1] # only one env is used
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
-
-
-
-        print(f"Observation space: {envs.observation_space}")
-        print(f"Observation shape: {envs.observation_space.shape}")
-        print(f"Action space: {envs.action_space}")
-        print(f"Action space high: {envs.action_space.high}")
-        print(f"Action space low: {envs.action_space.low}")
-
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if "final_info" in infos:
@@ -185,16 +160,9 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
         real_next_obs = next_obs.copy()
-
-        if isinstance(truncations, (list, np.ndarray)):  # Vectorized case
-            for idx, trunc in enumerate(truncations):
-                if trunc:
-                    real_next_obs[idx] = infos["final_observation"][idx]
-        else:  # Single environment case
-            if truncations:
-                real_next_obs = infos["final_observation"]
-          
-        # Add to replay buffer
+        for idx, trunc in enumerate(truncations):
+            if trunc:
+                real_next_obs[idx] = infos["final_observation"][idx]
         rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
@@ -205,8 +173,6 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             data = rb.sample(args.batch_size)
             with torch.no_grad():
                 next_state_actions, next_state_log_pi, _ = actor.get_action(data.next_observations)
-                print( next_state_actions, type(next_state_actions) )
-
                 qf1_next_target = qf1_target(data.next_observations, next_state_actions)
                 qf2_next_target = qf2_target(data.next_observations, next_state_actions)
                 min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_log_pi
@@ -269,5 +235,3 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     envs.close()
     writer.close()
-
-    

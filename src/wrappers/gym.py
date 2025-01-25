@@ -294,8 +294,11 @@ class SB3Wrapper(gym.core.Wrapper):
         self.action_space = env.action_space
 
     def reset(self, **kwargs):
+         # Ensure the output is a tuple (obs, info)
         obs = self.env.reset(**kwargs)
-        return obs, {}
+        if isinstance(obs, tuple) and len(obs) == 2:
+            return obs  # Already returns (obs, info)
+        return obs, {}  # Add an empty info if not present
 
     def step(self, action):
         return self.env.step(action)
