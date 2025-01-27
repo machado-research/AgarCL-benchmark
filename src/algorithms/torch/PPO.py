@@ -111,9 +111,9 @@ class PPO:
 
         for _ in range(self.eval_steps):
             action, _ = self.net.predict(obs)
-            image = obs[0]  # Convert to uint8
-            image = np.mean(image, axis=0)  # Convert to grayscale
-            image = image.astype('uint8')  # Convert to uint8
+            image = obs.transpose(0, 3, 1, 2)[0]  # Convert to uint8
+            image = np.mean(image, axis=0).astype(np.uint8)  # Convert to grayscale and uint8
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)  # Convert to BGR for OpenCV
             video.write(image)
 
             obs, reward, done, trunc, _ = self.env.step(action)
