@@ -12,7 +12,33 @@ import torch.optim as optim
 import tyro
 from torch.distributions.normal import Normal
 from torch.utils.tensorboard import SummaryWriter
+import gym_agario 
+import json
 
+class MultiActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+        self.action_space = gym.spaces.Tuple((
+            gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+            gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
+        ))
+
+    def action(self, action):
+        return action
+
+class ObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # Modify observation space if needed
+        self.observation_space = env.observation_space
+
+    def observation(self, observation):
+        return observation
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return obs, info 
 
 @dataclass
 class Args:
@@ -40,7 +66,7 @@ class Args:
     """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
-    env_id: str = "HalfCheetah-v4"
+    env_id: str = "agario-screen-v0"
     """the id of the environment"""
     total_timesteps: int = 1000000
     """total timesteps of the experiments"""
@@ -85,22 +111,18 @@ class Args:
 
 
 def make_env(env_id, idx, capture_video, run_name, gamma):
-    def thunk():
-        if capture_video and idx == 0:
-            env = gym.make(env_id, render_mode="rgb_array")
-            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        else:
-            env = gym.make(env_id)
-        env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
-        env = gym.wrappers.RecordEpisodeStatistics(env)
-        env = gym.wrappers.ClipAction(env)
-        env = gym.wrappers.NormalizeObservation(env)
-        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
-        return env
-
-    return thunk
+    env_config = json.load(open('/home/ayman/thesis/AgarLE-benchmark/env_config.json', 'r'))
+    env = gym.make(env_id, **env_config)
+    env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
+    env = gym.wrappers.RecordEpisodeStatistics(env)
+    env = MultiActionWrapper(env)
+    env = ObservationWrapper(env)
+    env = gym.wrappers.ClipAction(env)
+    env = gym.wrappers.NormalizeObservation(env)
+    env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+    env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+    env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+    return env
 
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
@@ -113,20 +135,32 @@ class Agent(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
+            layer_init(nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1)),
+            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.ReLU(),
+            layer_init(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1)),
+            nn.LayerNorm([64, 62, 62]),  # Add LayerNorm after the second Conv2d layer
+            nn.ReLU(),
+            nn.Flatten(),
+            layer_init(nn.Linear(64 * 62 * 62, 256)),
+            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
+            nn.ReLU(),
+            layer_init(nn.Linear(256, 1), std=1.0),
         )
         self.actor_mean = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, np.prod(envs.single_action_space.shape)), std=0.01),
+            nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
+            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.ReLU(),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),  # Additional Conv2d layer
+            nn.LayerNorm([64, 62, 62]),  # Add LayerNorm after the additional Conv2d layer
+            nn.ReLU(),
+            nn.Flatten(),
+            nn.Linear(64 * 62 * 62, 256),  # Adjust the input size according to the output of Conv2d
+            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
+            nn.ReLU(),
+            nn.Linear(256, 3),  # Output layer
         )
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(envs.single_action_space.shape)))
+        self.actor_logstd = nn.Parameter(torch.zeros(1, 3))
 
     def get_value(self, x):
         return self.critic(x)
@@ -174,17 +208,20 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    envs = gym.vector.SyncVectorEnv(
-        [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
-    )
-    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
-
+    # envs = gym.vector.SyncVectorEnv(
+    #     [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
+    # )
+    envs = [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
+    envs = envs[0]
+    import pdb; pdb.set_trace()
+    # assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
-    actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    # actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
+    actions   = torch.zeros((args.num_steps, args.num_envs) + (3,)).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -193,8 +230,9 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
+    import pdb; pdb.set_trace()
     next_obs, _ = envs.reset(seed=args.seed)
-    next_obs = torch.Tensor(next_obs).to(device)
+    next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
 
     for iteration in range(1, args.num_iterations + 1):
