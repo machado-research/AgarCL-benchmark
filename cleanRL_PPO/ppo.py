@@ -15,7 +15,8 @@ from torch.distributions import Normal, Categorical
 from torch.utils.tensorboard import SummaryWriter
 import gym_agario 
 import json
-
+from custom_cleanrl_utils.evals.ppo_eval import evaluate
+from custom_cleanrl_utils.huggingface import push_to_hub
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -418,7 +419,7 @@ if __name__ == "__main__":
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
         torch.save(agent.state_dict(), model_path)
         print(f"model saved to {model_path}")
-        from cleanrl_utils.evals.ppo_eval import evaluate
+        
 
         episodic_returns = evaluate(
             model_path,
@@ -434,8 +435,6 @@ if __name__ == "__main__":
             writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
         if args.upload_model:
-            from cleanrl_utils.huggingface import push_to_hub
-
             repo_name = f"{args.env_id}-{args.exp_name}-seed{args.seed}"
             repo_id = f"{args.hf_entity}/{repo_name}" if args.hf_entity else repo_name
             push_to_hub(args, episodic_returns, repo_id, "PPO", f"runs/{run_name}", f"videos/{run_name}-eval")

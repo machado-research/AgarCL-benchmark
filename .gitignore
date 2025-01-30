@@ -30,3 +30,6 @@ test.json
 configs/
 jobs/*.txt
 .history
+
+*.zip
+agar/
