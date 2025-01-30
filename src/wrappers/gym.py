@@ -338,7 +338,7 @@ class ModifyActionWrapperCRL(gym.ActionWrapper):
         range_array = np.linspace(-1.0, 1.0, 4)
         discrete_index = np.searchsorted(range_array, dis_action, side="right") - 1
         dis_action = max(0, min(discrete_index, 2))
-        dis_action = int(dis_action)
+        dis_action = 0
         return (np.array(cont_action, dtype=np.float32), dis_action)
 
     def step(self, action):
