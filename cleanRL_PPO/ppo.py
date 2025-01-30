@@ -10,7 +10,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import tyro
-from torch.distributions.normal import Normal
+# from torch.distributions.normal import Normal
+from torch.distributions import Normal, Categorical
 from torch.utils.tensorboard import SummaryWriter
 import gym_agario 
 import json
@@ -31,14 +32,14 @@ class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         # Modify observation space if needed
-        self.observation_space = env.observation_space
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
 
     def observation(self, observation):
-        return observation
+        return observation.transpose(0, 3, 1, 2)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        return obs, info 
+        return obs.transpose(0, 3, 1, 2), info
 
 @dataclass
 class Args:
@@ -111,17 +112,18 @@ class Args:
 
 
 def make_env(env_id, idx, capture_video, run_name, gamma):
-    env_config = json.load(open('/home/ayman/thesis/AgarLE-benchmark/env_config.json', 'r'))
+    env_config = json.load(open('/home/mamm/ayman/thesis/AgarLE-benchmark/env_config.json', 'r'))
     env = gym.make(env_id, **env_config)
-    env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
+    # env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
     env = gym.wrappers.RecordEpisodeStatistics(env)
-    env = MultiActionWrapper(env)
-    env = ObservationWrapper(env)
-    env = gym.wrappers.ClipAction(env)
     env = gym.wrappers.NormalizeObservation(env)
     env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-    env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-    env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+    env = MultiActionWrapper(env)
+    env = ObservationWrapper(env)
+    # env = gym.wrappers.ClipAction(env)
+    
+    # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+    # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
     return env
 
 
@@ -131,49 +133,95 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     return layer
 
 
+class LambdaLayer(nn.Module):
+    def __init__(self, lambd):
+        super(LambdaLayer, self).__init__()
+        self.lambd = lambd
+
+    def forward(self, x):
+        return self.lambd(x)
+
 class Agent(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.critic = nn.Sequential(
             layer_init(nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1)),
-            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
             nn.ReLU(),
             layer_init(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1)),
-            nn.LayerNorm([64, 62, 62]),  # Add LayerNorm after the second Conv2d layer
+            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the second Conv2d layer
             nn.ReLU(),
             nn.Flatten(),
-            layer_init(nn.Linear(64 * 62 * 62, 256)),
+            layer_init(nn.Linear(64 * 106* 106, 256)),
             nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
             nn.ReLU(),
             layer_init(nn.Linear(256, 1), std=1.0),
         )
-        self.actor_mean = nn.Sequential(
+        self.actor_base = nn.Sequential(
             nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
-            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
             nn.ReLU(),
             nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),  # Additional Conv2d layer
-            nn.LayerNorm([64, 62, 62]),  # Add LayerNorm after the additional Conv2d layer
+            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the additional Conv2d layer
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64 * 62 * 62, 256),  # Adjust the input size according to the output of Conv2d
+            layer_init(nn.Linear(64 * 106* 106, 256)),
             nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
             nn.ReLU(),
-            nn.Linear(256, 3),  # Output layer
-        )
-        self.actor_logstd = nn.Parameter(torch.zeros(1, 3))
+            # nn.Linear(256, 5),  # Output layer 5 actions [continous_1, continous_2, do_nothing, split, feed]
+            # LambdaLayer(lambda x: torch.cat((x[:, :2], torch.softmax(x[:, 2:], dim=-1)), dim=-1))
+            )
+        
+        # self.actor_logstd = nn.Parameter(torch.zeros(1, 3))
+         # Separate outputs for continuous and discrete actions
+        self.actor_mean = layer_init(nn.Linear(256, 2))  # 2 continuous actions
+        self.actor_logstd = nn.Parameter(torch.zeros(2))  # Log std for 2 continuous actions
+        self.actor_discrete = layer_init(nn.Linear(256, 3))  # 3 discrete actions (logits)
 
     def get_value(self, x):
         return self.critic(x)
 
-    def get_action_and_value(self, x, action=None):
-        action_mean = self.actor_mean(x)
-        action_logstd = self.actor_logstd.expand_as(action_mean)
-        action_std = torch.exp(action_logstd)
-        probs = Normal(action_mean, action_std)
-        if action is None:
-            action = probs.sample()
-        return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
+    # def get_action_and_value(self, x, action=None):
+    #     action_mean = self.actor_mean(x)
+    #     action_logstd = self.actor_logstd.expand_as(action_mean)
+    #     action_std = torch.exp(action_logstd)
+    #     probs = Normal(action_mean, action_std)
+    #     if action is None:
+    #         action = probs.sample()
+        
+    #     import pdb; pdb.set_trace()
 
+    #     return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
+    def get_action_and_value(self, x, action=None):
+        features = self.actor_base(x)
+        
+        # Continuous actions
+        action_mean = self.actor_mean(features)
+        action_std = torch.exp(self.actor_logstd)  # Ensure std is positive
+        continuous_dist = Normal(action_mean, action_std)
+        
+        # Discrete actions
+        action_logits = self.actor_discrete(features)
+        discrete_dist = Categorical(logits=action_logits)
+
+        if action is None:
+            continuous_action = continuous_dist.sample()
+            discrete_action = discrete_dist.sample()
+        else:
+            action = action.reshape(-1,action.shape[-1])
+            continuous_action, discrete_action = action[:, :2], action[:, 2]
+        
+        #Clip continuous action to the valid range [-1,1]
+        continuous_action = torch.tanh(continuous_action)
+        # Compute log probabilities
+        continuous_log_prob = continuous_dist.log_prob(continuous_action).sum(-1)
+        discrete_log_prob = discrete_dist.log_prob(discrete_action)
+        log_prob = continuous_log_prob + discrete_log_prob  # Sum log probabilities
+        
+        # Compute entropy for PPO updates
+        entropy = continuous_dist.entropy().sum(-1) + discrete_dist.entropy()
+
+        return (continuous_action, discrete_action), log_prob, entropy, self.critic(x)
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -213,13 +261,14 @@ if __name__ == "__main__":
     # )
     envs = [make_env(args.env_id, i, args.capture_video, run_name, args.gamma) for i in range(args.num_envs)]
     envs = envs[0]
-    import pdb; pdb.set_trace()
     # assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
-    obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
+    obs_shape = tuple(envs.observation_space.shape)
+    # transposed_obs_shape = (obs_shape[0], obs_shape[3]) + obs_shape[1:3]
+    obs = torch.zeros((args.num_steps,) + obs_shape).to(device)
     # actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
     actions   = torch.zeros((args.num_steps, args.num_envs) + (3,)).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -230,7 +279,6 @@ if __name__ == "__main__":
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
-    import pdb; pdb.set_trace()
     next_obs, _ = envs.reset(seed=args.seed)
     next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
@@ -251,14 +299,18 @@ if __name__ == "__main__":
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
                 values[step] = value.flatten()
-            actions[step] = action
+            actions[step, :, :2] = action[0]
+            actions[step, :, 2] = action[1]
             logprobs[step] = logprob
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-            next_done = np.logical_or(terminations, truncations)
+            corrected_continuous_action = action[0].squeeze(0).cpu().numpy()
+            corrected_discrete_action = action[1].item()
+            formatted_action = (corrected_continuous_action, corrected_discrete_action)
+            next_obs, reward, terminations, truncations, infos = envs.step(formatted_action)
+            next_done = np.logical_or(terminations, truncations).astype(np.float32)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
-            next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
+            next_obs, next_done = torch.tensor(next_obs, dtype=torch.float32).to(device), torch.tensor(next_done, dtype=torch.float32).to(device)
 
             if "final_info" in infos:
                 for info in infos["final_info"]:
@@ -284,9 +336,10 @@ if __name__ == "__main__":
             returns = advantages + values
 
         # flatten the batch
-        b_obs = obs.reshape((-1,) + envs.single_observation_space.shape)
+        b_obs = obs.reshape((-1,) + envs.observation_space.shape)
         b_logprobs = logprobs.reshape(-1)
-        b_actions = actions.reshape((-1,) + envs.single_action_space.shape)
+        # b_actions = actions.reshape((-1,) + envs.action_space.shape)
+        b_actions = actions
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
@@ -297,7 +350,7 @@ if __name__ == "__main__":
         for epoch in range(args.update_epochs):
             np.random.shuffle(b_inds)
             for start in range(0, args.batch_size, args.minibatch_size):
-                end = start + args.minibatch_size
+                end = start + args.minibatch_size 
                 mb_inds = b_inds[start:end]
 
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
