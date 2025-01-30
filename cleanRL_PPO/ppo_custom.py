@@ -21,13 +21,14 @@ class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
 
-        self.action_space = gym.spaces.Tuple((
-            gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
-            gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
-        ))
+        # self.action_space = gym.spaces.Tuple((
+        #     gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+        #     gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
+        # ))
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
 
     def action(self, action):
-        return action
+        return (action, 0)  # no-op on the second action
 
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
@@ -182,48 +183,46 @@ class Agent(nn.Module):
     def get_value(self, x):
         return self.critic(x)
 
-    # def get_action_and_value(self, x, action=None):
-    #     action_mean = self.actor_mean(x)
-    #     action_logstd = self.actor_logstd.expand_as(action_mean)
-    #     action_std = torch.exp(action_logstd)
-    #     probs = Normal(action_mean, action_std)
-    #     if action is None:
-    #         action = probs.sample()
-        
-    #     import pdb; pdb.set_trace()
-
-    #     return action, probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
-    
     def get_action_and_value(self, x, action=None):
         features = self.actor_base(x)
-        
-        # Continuous actions
         action_mean = self.actor_mean(features)
-        action_std = torch.exp(self.actor_logstd)  # Ensure std is positive
-        continuous_dist = Normal(action_mean, action_std)
-        
-        # Discrete actions
-        action_logits = self.actor_discrete(features)
-        discrete_dist = Categorical(logits=action_logits)
-
+        action_logstd = self.actor_logstd.expand_as(action_mean)
+        action_std = torch.exp(action_logstd)
+        probs = Normal(action_mean, action_std)
         if action is None:
-            continuous_action = continuous_dist.sample()
-            discrete_action = discrete_dist.sample()
-        else:
-            action = action.reshape(-1,action.shape[-1])
-            continuous_action, discrete_action = action[:, :2], action[:, 2]
+            action = probs.sample()
         
-        #Clip continuous action to the valid range [-1,1]
-        continuous_action = torch.tanh(continuous_action)
-        # Compute log probabilities
-        continuous_log_prob = continuous_dist.log_prob(continuous_action).sum(-1)
-        discrete_log_prob = discrete_dist.log_prob(discrete_action)
-        log_prob = continuous_log_prob + discrete_log_prob  # Sum log probabilities
+        return torch.tanh(action), probs.log_prob(action).sum(-1), probs.entropy().sum(-1), self.critic(x)
+    # def get_action_and_value(self, x, action=None):
+    #     features = self.actor_base(x)
         
-        # Compute entropy for PPO updates
-        entropy = continuous_dist.entropy().sum(-1) + discrete_dist.entropy()
+    #     # Continuous actions
+    #     action_mean = self.actor_mean(features)
+    #     action_std = torch.exp(self.actor_logstd)  # Ensure std is positive
+    #     continuous_dist = Normal(action_mean, action_std)
+        
+    #     # Discrete actions
+    #     action_logits = self.actor_discrete(features)
+    #     discrete_dist = Categorical(logits=action_logits)
 
-        return (continuous_action, discrete_action), log_prob, entropy, self.critic(x)
+    #     if action is None:
+    #         continuous_action = continuous_dist.sample()
+    #         discrete_action = discrete_dist.sample()
+    #     else:
+    #         action = action.reshape(-1,action.shape[-1])
+    #         continuous_action, discrete_action = action[:, :2], action[:, 2]
+        
+    #     #Clip continuous action to the valid range [-1,1]
+    #     continuous_action = torch.tanh(continuous_action)
+    #     # Compute log probabilities
+    #     continuous_log_prob = continuous_dist.log_prob(continuous_action).sum(-1)
+    #     discrete_log_prob = discrete_dist.log_prob(discrete_action)
+    #     log_prob = continuous_log_prob + discrete_log_prob  # Sum log probabilities
+        
+    #     # Compute entropy for PPO updates
+    #     entropy = continuous_dist.entropy().sum(-1) + discrete_dist.entropy()
+
+    #     return (continuous_action, discrete_action), log_prob, entropy, self.critic(x)
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -272,7 +271,7 @@ if __name__ == "__main__":
     # transposed_obs_shape = (obs_shape[0], obs_shape[3]) + obs_shape[1:3]
     obs = torch.zeros((args.num_steps,) + obs_shape).to(device)
     # actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
-    actions   = torch.zeros((args.num_steps, args.num_envs) + (3,)).to(device)
+    actions   = torch.zeros((args.num_steps, args.num_envs) + (2,)).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -301,15 +300,15 @@ if __name__ == "__main__":
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
                 values[step] = value.flatten()
-            actions[step, :, :2] = action[0]
-            actions[step, :, 2] = action[1]
+            actions[step] = action
+            # actions[step, :, 2] = action[1]
             logprobs[step] = logprob
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            corrected_continuous_action = action[0].squeeze(0).cpu().numpy()
-            corrected_discrete_action = action[1].item()
-            formatted_action = (corrected_continuous_action, corrected_discrete_action)
-            next_obs, reward, terminations, truncations, infos = envs.step(formatted_action)
+            # corrected_continuous_action = action[0].squeeze(0).cpu().numpy()
+            # corrected_discrete_action = action[1].item()
+            # formatted_action = (corrected_continuous_action, corrected_discrete_action)
+            next_obs, reward, terminations, truncations, infos = envs.step(action[0].cpu().numpy())
             next_done = np.logical_or(terminations, truncations).astype(np.float32)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.tensor(next_obs, dtype=torch.float32).to(device), torch.tensor(next_done, dtype=torch.float32).to(device)
@@ -354,7 +353,6 @@ if __name__ == "__main__":
             for start in range(0, args.batch_size, args.minibatch_size):
                 end = start + args.minibatch_size 
                 mb_inds = b_inds[start:end]
-
                 _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
