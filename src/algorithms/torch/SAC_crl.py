@@ -1,5 +1,6 @@
 import os
 import random
+import cv2
 import time
 import modules.agar.gym_agario 
 from dataclasses import dataclass
@@ -13,29 +14,104 @@ import torch.optim as optim
 import tyro
 from stable_baselines3.common.buffers import ReplayBuffer
 
-from src.wrappers.gym import SB3Wrapper, ModifyActionWrapperCRL, FlattenObservationWrapper
+from src.wrappers.gym import SB3Wrapper, ModifyActionWrapperCRL, FlattenObservationWrapper, FlattenObservation
 from torch.utils.tensorboard import SummaryWriter
 #from src.wrappers.gym import make_env
 
 from cleanrl.cleanrl.sac_continuous_action import Actor, Args, SoftQNetwork
 
+class MultiActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # self.action_space = gym.spaces.Tuple((
+        #     gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+        #     gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
+        # ))
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+    def action(self, action):
+        return (action, 0)  # no-op on the second action
+class ObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # Modify observation space if needed
+        print( self.observation_space.shape )
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
+    def observation(self, observation):
+        return observation.transpose(0, 3, 1, 2)
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return obs.transpose(0, 3, 1, 2), info
 
+def eval_agent(env, actor, save_path="agent_playing.mp4", eval_steps=500):
+    obs, _ = env.reset()
+    cumulative_reward = 0
+
+
+    height, width = (84,84)
+
+    # Setup Video Writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(save_path, fourcc, 30, (width, height))
+
+   
+    for _ in range(eval_steps):
+        action, _, _ = actor.get_action(  torch.tensor(obs, dtype=torch.float32, device=device).reshape(1, -1) )
+        action = action.cpu().detach().numpy()  # Convert to NumPy for env step
+
+        # Convert grayscale to RGB if needed
+        image = obs.astype(np.uint8)
+        if len(image.shape) == 2:  
+            # image = image.unsqueeze(0).repeat(3, 1, 1)  # (3, H, W) for RGB
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+
+        # image = image.permute(1, 2, 0).cpu().numpy()  # Convert (3, H, W) → (H, W, 3)
+
+        video.write( np.ascontiguousarray(image) )  # Save frame
+
+        print( action.shape )
+
+        obs, reward, done, trunc, _ = env.step(action.squeeze())
+        cumulative_reward += reward
+
+        if done or trunc:
+            obs,_ = env.reset()
+
+    video.release()
+    cv2.destroyAllWindows()
+
+    print(f"Video saved at {save_path}")
+    return cumulative_reward
 
 def make_env(env_id, seed, idx, capture_video, run_name, **kwargs):
     #return gym.make(env_id, **kwargs)
     def thunk():
-        # if capture_video and idx == 0:
-        #     env = gym.make(env_id, render_mode="rgb_array")
-        #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-        # else:
-        env = gym.make(env_id, **kwargs)
+        if capture_video and idx == 0:
+            if ( env_id == "agario-screen-v0" ):
+                env = gym.make(env_id, **kwargs)
+                env = SB3Wrapper(env)
+                env = ModifyActionWrapperCRL(env)
+                env = FlattenObservation(env)
+                env = gym.wrappers.RecordEpisodeStatistics(env)
+            else:
+                env = gym.make(env_id, render_mode='rgb_array')
+            env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
+        else:
+            if ( env_id == "agario-screen-v0" ):
+                env = gym.make(env_id, **kwargs)
+                env = SB3Wrapper(env)
+                env = ModifyActionWrapperCRL(env)
+                env = FlattenObservation(env)
+                env = gym.wrappers.RecordEpisodeStatistics(env)
 
-        if ( env_id == "agario-screen-v0" ):
-            env = SB3Wrapper(env)
-            env = ModifyActionWrapperCRL(env)
-            env = FlattenObservationWrapper(env)
+                # 
+                # env = gym.wrappers.RecordEpisodeStatistics(env)
+                # env = gym.wrappers.NormalizeObservation(env)
+                # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+                # env = MultiActionWrapper(env)
+                # env = ObservationWrapper(env)
+            else:
+                env = gym.make(env_id, render_mode='rgb_array')
 
-        env = gym.wrappers.RecordEpisodeStatistics(env)
         env.action_space.seed(seed)
   
         obs = env.reset()
@@ -52,7 +128,15 @@ class AgarIOActor( Actor ):
     
     # Need to override this
     def get_action(self, x):
-        return super().get_action(x)
+        action, log_prob, mean_action = super().get_action(x)
+             # Ensure that print_limit does not exceed the batch size
+        batch_size = action[0].shape[0]  # Assuming action is a tuple (cont_action, dis_action)
+    
+        # Overwrite the discrete action (last dimension) to always map to index 0
+        # Assuming that setting it to the lower bound maps to discrete action 0
+        # For example, if action_space.low[-1] = -1.0, set to -1.0
+        # print( action[0] )
+        return action, log_prob, mean_action
 
 
 
@@ -68,7 +152,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     args = tyro.cli(Args)
 
-    args.env_id = "agario-screen-v0"
+    args.env_id =  "agario-screen-v0" #"MountainCarContinuous-v0"
 
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
@@ -108,7 +192,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     max_action = float(envs.single_action_space.high[0])
 
-    actor = Actor(envs).to(device)
+    actor = AgarIOActor(envs).to(device)
     qf1 = SoftQNetwork(envs).to(device)
     qf2 = SoftQNetwork(envs).to(device)
     qf1_target = SoftQNetwork(envs).to(device)
@@ -136,6 +220,11 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         handle_timeout_termination=False,
     )
     start_time = time.time()
+
+    # eval_env = make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)()
+
+    # # Evaluate and save the agent's gameplay video
+    # eval_agent(eval_env, actor, save_path="agario_agent.mp4")
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)

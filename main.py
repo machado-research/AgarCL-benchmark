@@ -42,12 +42,21 @@ env_config = json.load(open('env_config.json', 'r'))
 device = torch.device("cuda" if torch.cuda.is_available()
                       else "cpu")
 
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(
+    level=logging.DEBUG,  # Set the default log level
+    format='%(asctime)s - %(message)s',  # Include timestamp and level
+    handlers=[
+        logging.StreamHandler()  # Ensure logs are printed to the console
+    ]
+)
 logger = logging.getLogger('exp')
 logging.getLogger('jax').setLevel(logging.ERROR)
 prod = 'cdr' in socket.gethostname() or args.silent
 if not prod:
     logger.setLevel(logging.DEBUG)
+
+logger.debug(f"Arguments: {args}")
+logger.debug(f"Device set to: {device}")
 
 # ----------------------
 # -- Experiment Def'n --
@@ -56,6 +65,7 @@ exp = ExperimentModel.load(args.exp)
 indices = args.idxs
 
 for idx in indices:
+    logger.debug(f"Starting run for index: {idx}")
     collector_config = {
         'reward': Identity(),
         'steps': Identity(),
@@ -67,7 +77,7 @@ for idx in indices:
     collector.setIdx(idx)
 
     run = exp.getRun(idx)
-
+    logger.debug(f"Run configuration loaded for index {idx}")
     # set random seeds accordingly
     random.seed(idx)
     np.random.seed(idx)
