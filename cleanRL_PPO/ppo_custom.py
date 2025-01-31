@@ -284,7 +284,7 @@ if __name__ == "__main__":
     next_obs, _ = envs.reset(seed=args.seed)
     next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
-
+    best_reward = -np.inf
     for iteration in range(1, args.num_iterations + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
@@ -315,8 +315,7 @@ if __name__ == "__main__":
             # if "final_info" in infos:
                 # for info in infos["final_info"]:
                     # if info and "episode" in info:
-            if(global_step%500 == 0):    
-                print(f"global_step={global_step}, episodic_return={rewards.sum().item()} , episodic_length={step}, next_done={next_done}")
+
                         # writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                         # writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
    
@@ -419,7 +418,13 @@ if __name__ == "__main__":
         # Write the metrics to a CSV file
         with open(f"runs/{run_name}/metrics.csv", "a") as f:
             f.write(f"{global_step},{optimizer.param_groups[0]['lr']},{v_loss.item()},{pg_loss.item()},{entropy_loss.item()},{old_approx_kl.item()},{approx_kl.item()},{np.mean(clipfracs)},{explained_var},{int(global_step / (time.time() - start_time))},{rewards.sum().item()}\n")
-
+        # Save the model if there is no model or if the rewards are better
+        
+        if rewards.sum().item() > best_reward:
+            best_reward = rewards.sum().item()
+            model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+            torch.save(agent.state_dict(), model_path)
+            print(f"model saved to {model_path}")
         # Log the metrics to TensorBoard
         # writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         # writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
@@ -431,10 +436,10 @@ if __name__ == "__main__":
         # writer.add_scalar("losses/explained_variance", explained_var, global_step)
         # writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-    if args.save_model:
-        model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
-        torch.save(agent.state_dict(), model_path)
-        print(f"model saved to {model_path}")
+    # if args.save_model:
+    #     model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
+    #     torch.save(agent.state_dict(), model_path)
+    #     print(f"model saved to {model_path}")
         
 
         episodic_returns = evaluate(
@@ -446,6 +451,7 @@ if __name__ == "__main__":
             Model=Agent,
             device=device,
             gamma=args.gamma,
+            env=envs,
         )
         for idx, episodic_return in enumerate(episodic_returns):
             writer.add_scalar("eval/episodic_return", episodic_return, idx)
