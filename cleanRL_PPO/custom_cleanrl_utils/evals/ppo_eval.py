@@ -2,7 +2,9 @@ from typing import Callable
 
 import gymnasium as gym
 import torch
-
+import cv2
+import os
+import time
 
 def evaluate(
     model_path: str,
@@ -14,23 +16,31 @@ def evaluate(
     device: torch.device = torch.device("cpu"),
     capture_video: bool = True,
     gamma: float = 0.99,
+    env: gym.Env = None,
 ):
-    envs = gym.vector.SyncVectorEnv([make_env(env_id, 0, capture_video, run_name, gamma)])
+    envs = env 
     agent = Model(envs).to(device)
     agent.load_state_dict(torch.load(model_path, map_location=device))
     agent.eval()
 
     obs, _ = envs.reset()
-    episodic_returns = []
+    episodic_returns = [0]
     while len(episodic_returns) < eval_episodes:
         actions, _, _, _ = agent.get_action_and_value(torch.Tensor(obs).to(device))
-        next_obs, _, _, _, infos = envs.step(actions.cpu().numpy())
-        if "final_info" in infos:
-            for info in infos["final_info"]:
-                if "episode" not in info:
-                    continue
-                print(f"eval_episode={len(episodic_returns)}, episodic_return={info['episode']['r']}")
-                episodic_returns += [info["episode"]["r"]]
+        next_obs, reward, done, truncations, step_num = envs.step(actions[0].cpu().numpy())
+        gray_scale = next_obs.mean(axis=1)[0] # Compute the mean across the color channels
+        gray_scale = (gray_scale * 255).astype('uint8') # Convert to uint8
+        
+        os.makedirs("images", exist_ok=True)
+        cv2.imwrite(f"images/observation_{step_num}.png", gray_scale)
+        # print(f"Reward: {reward}")
+        if done or truncations:
+            episodic_returns.append(reward)
+            obs, _ = envs.reset()
+            break
+        else:
+            episodic_returns[-1] += reward
+        
         obs = next_obs
 
     return episodic_returns

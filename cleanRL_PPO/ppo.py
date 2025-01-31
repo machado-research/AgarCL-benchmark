@@ -216,12 +216,12 @@ class Agent(nn.Module):
         #Clip continuous action to the valid range [-1,1]
         continuous_action = torch.tanh(continuous_action)
         # Compute log probabilities
-        continuous_log_prob = continuous_dist.log_prob(continuous_action).sum(-1)
+        continuous_log_prob = continuous_dist.log_prob(continuous_action).sum(1)
         discrete_log_prob = discrete_dist.log_prob(discrete_action)
         log_prob = continuous_log_prob + discrete_log_prob  # Sum log probabilities
         
         # Compute entropy for PPO updates
-        entropy = continuous_dist.entropy().sum(-1) + discrete_dist.entropy()
+        entropy = continuous_dist.entropy().sum(1) + discrete_dist.entropy()
 
         return (continuous_action, discrete_action), log_prob, entropy, self.critic(x)
 
@@ -341,7 +341,7 @@ if __name__ == "__main__":
         b_obs = obs.reshape((-1,) + envs.observation_space.shape)
         b_logprobs = logprobs.reshape(-1)
         # b_actions = actions.reshape((-1,) + envs.action_space.shape)
-        b_actions = actions
+        b_actions = actions.reshape((-1,) + actions.shape[-1])
         b_advantages = advantages.reshape(-1)
         b_returns = returns.reshape(-1)
         b_values = values.reshape(-1)
