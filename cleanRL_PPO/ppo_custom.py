@@ -74,7 +74,7 @@ class Args:
     """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    num_steps: int = 2000
+    num_steps: int = 100
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -280,6 +280,7 @@ if __name__ == "__main__":
     next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     best_reward = -np.inf
+    episodic_reward = 0 # The current episode reward
     for iteration in range(1, args.num_iterations + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
@@ -295,6 +296,10 @@ if __name__ == "__main__":
             if(next_done == True):
                 next_obs, _ = envs.reset()
                 next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
+                print(f"Episode Reward: {episodic_reward}")
+                with open(f"runs/{run_name}/rewards.csv", "a") as f:
+                    f.write(f"{global_step},{episodic_reward}\n")
+                episodic_reward = 0
                 
             # ALGO LOGIC: action logic
             with torch.no_grad():
@@ -307,6 +312,7 @@ if __name__ == "__main__":
             next_done = np.logical_or(terminations, truncations).astype(np.float32)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.tensor(next_obs, dtype=torch.float32).to(device), torch.tensor(next_done, dtype=torch.float32).to(device)
+            episodic_reward += reward[0]
             # if "final_info" in infos:
                 # for info in infos["final_info"]:
                     # if info and "episode" in info:
@@ -412,7 +418,7 @@ if __name__ == "__main__":
 
         # Write the metrics to a CSV file
         with open(f"runs/{run_name}/metrics.csv", "a") as f:
-            f.write(f"{global_step},{optimizer.param_groups[0]['lr']},{v_loss.item()},{pg_loss.item()},{entropy_loss.item()},{old_approx_kl.item()},{approx_kl.item()},{np.mean(clipfracs)},{explained_var},{int(global_step / (time.time() - start_time))},{rewards.sum().item()}\n")
+            f.write(f"{global_step},{optimizer.param_groups[0]['lr']},{v_loss.item()},{pg_loss.item()},{entropy_loss.item()},{old_approx_kl.item()},{approx_kl.item()},{np.mean(clipfracs)},{explained_var},{int(global_step / (time.time() - start_time))}\n")
         # Save the model if there is no model or if the rewards are better
         
         if rewards.sum().item() > best_reward:
