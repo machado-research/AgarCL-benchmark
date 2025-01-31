@@ -280,7 +280,7 @@ if __name__ == "__main__":
     next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
     next_done = torch.zeros(args.num_envs).to(device)
     best_reward = -np.inf
-    episodic_reward = 0 # The current episode reward
+    episodic_reward = 0
     for iteration in range(1, args.num_iterations + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr:
@@ -294,6 +294,9 @@ if __name__ == "__main__":
             dones[step] = next_done
 
             if(next_done == True):
+                with open(f"runs/{run_name}/episodic_rewards.csv", "a") as f:
+                    f.write(f"{global_step},{episodic_reward}\n")
+                episodic_reward = 0
                 next_obs, _ = envs.reset()
                 next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
                 print(f"Episode Reward: {episodic_reward}")
@@ -312,14 +315,13 @@ if __name__ == "__main__":
             next_done = np.logical_or(terminations, truncations).astype(np.float32)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.tensor(next_obs, dtype=torch.float32).to(device), torch.tensor(next_done, dtype=torch.float32).to(device)
-            episodic_reward += reward[0]
+            episodic_reward += reward
             # if "final_info" in infos:
                 # for info in infos["final_info"]:
                     # if info and "episode" in info:
 
                         # writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
                         # writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
-   
                 
         # import pdb; pdb.set_trace()
 
