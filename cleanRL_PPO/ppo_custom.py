@@ -442,24 +442,24 @@ if __name__ == "__main__":
     #     print(f"model saved to {model_path}")
         
 
-        episodic_returns = evaluate(
-            model_path,
-            make_env,
-            args.env_id,
-            eval_episodes=10,
-            run_name=f"{run_name}-eval",
-            Model=Agent,
-            device=device,
-            gamma=args.gamma,
-            env=envs,
-        )
-        for idx, episodic_return in enumerate(episodic_returns):
-            writer.add_scalar("eval/episodic_return", episodic_return, idx)
+    episodic_returns = evaluate(
+        model_path,
+        make_env,
+        args.env_id,
+        eval_episodes=10,
+        run_name=f"{run_name}-eval",
+        Model=Agent,
+        device=device,
+        gamma=args.gamma,
+        env=envs,
+    )
+    for idx, episodic_return in enumerate(episodic_returns):
+        writer.add_scalar("eval/episodic_return", episodic_return, idx)
 
-        if args.upload_model:
-            repo_name = f"{args.env_id}-{args.exp_name}-seed{args.seed}"
-            repo_id = f"{args.hf_entity}/{repo_name}" if args.hf_entity else repo_name
-            push_to_hub(args, episodic_returns, repo_id, "PPO", f"runs/{run_name}", f"videos/{run_name}-eval")
+    if args.upload_model:
+        repo_name = f"{args.env_id}-{args.exp_name}-seed{args.seed}"
+        repo_id = f"{args.hf_entity}/{repo_name}" if args.hf_entity else repo_name
+        push_to_hub(args, episodic_returns, repo_id, "PPO", f"runs/{run_name}", f"videos/{run_name}-eval")
 
     envs.close()
     writer.close()
