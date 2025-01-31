@@ -8,20 +8,32 @@ import imageio
 from typing import Callable, Any
 
 
-def make_env(env_name, config, gamma, normalize_observation=False, normalize_reward=False):
+
+def make_env(env_name, config, gamma, normalize_observation=False, normalize_reward=False, hybrid_action=False):
+
     env = gym.make(env_name, **config)
     # deal with dm_control's Dict observation space
     # env = FlattenObservation(env)
+    env = gym.wrappers.RecordEpisodeStatistics(env)
+
+    if hybrid_action:
+        env = HybridActionWrapper(env)
+    else:
+        env = ContinuousActionWrapper(env)
+    env = ObservationWrapper(env)
+
     if normalize_observation:
         env = NormalizeObservation(env)
+        env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
 
-    # if normalize_reward:
-    #     env = NormalizeReward(env, gamma=gamma)
+    if normalize_reward:
+        env = NormalizeReward(env, gamma=gamma)
 
-    # if config['render_mode'] == "rgb_array":
-    #     env = VideoRecorderWrapper(env, config['video_path'])
+    if config['render_mode'] == "rgb_array":
+        env = VideoRecorderWrapper(env, config['video_path'])
 
-    # env = ModifyObservationWrapper(env)
+    
+    
     return env
 
 
@@ -350,3 +362,38 @@ class ModifyObservationWrapper(gym.ObservationWrapper):
         obs, _ = self.env.reset(**kwargs)
         obs = self.observation(obs)
         return obs, {}
+
+
+#PPO - CleanRL
+class ContinuousActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,))
+
+    def action(self, action):
+        return (action,0)
+
+class HybridActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+        self.action_space = gym.spaces.Tuple((
+            gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+            gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
+        ))
+
+    def action(self, action):
+        return action
+
+class ObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
+
+    def observation(self, observation):
+        return observation.transpose(0, 3, 1, 2)
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return obs.transpose(0, 3, 1, 2), info

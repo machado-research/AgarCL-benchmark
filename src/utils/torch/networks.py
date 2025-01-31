@@ -1,6 +1,7 @@
 import gymnasium as gym
 import torch.nn as nn
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+import numpy as np
 
 class CNNPolicy(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 128):
@@ -28,3 +29,9 @@ class CNNPolicy(BaseFeaturesExtractor):
         x = x.permute(0, 3, 1, 2)
         x = self.conv_layers(x)
         return x
+    
+
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    nn.init.orthogonal_(layer.weight, std)
+    nn.init.constant_(layer.bias, bias_const)
+    return layer

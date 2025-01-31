@@ -24,10 +24,6 @@ class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
 
-        # self.action_space = gym.spaces.Tuple((
-        #     gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
-        #     gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
-        # ))
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
     def action(self, action):
         return (action, 0)  # no-op on the second action
@@ -35,7 +31,6 @@ class MultiActionWrapper(gym.ActionWrapper):
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        # Modify observation space if needed
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
 
     def observation(self, observation):

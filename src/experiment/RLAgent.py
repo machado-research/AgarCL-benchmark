@@ -5,7 +5,7 @@ import numpy as np
 
 def get_agent(name, use_jax):
     path = 'src.algorithms.jax' if use_jax else 'src.algorithms.torch'
-    if name in ['DQN', 'SAC', 'PPO']:
+    if name in ['DQN', 'SAC', 'PPO', 'PPO_CleanRL']:
         mod = import_module(f'{path}.{name}')
     else:
         raise ValueError(f'Unknown agent: {name}')
@@ -23,7 +23,8 @@ class RLAgent:
         self.gamma = self.hypers['gamma']
         self.norm_obs = self.hypers['norm_obs']
         self.norm_reward = self.hypers['norm_reward']
-        self.env = gym.make(exp.env_name, **env_config)
+        # self.env = gym.make(exp.env_name, **env_config)
+        self.env = make_env(exp.env_name, self.env_config, self.gamma, self.norm_obs, self.norm_reward, False)
         self.env.seed(seed)
 
         self.agent = get_agent(self.agent, exp.use_jax)
