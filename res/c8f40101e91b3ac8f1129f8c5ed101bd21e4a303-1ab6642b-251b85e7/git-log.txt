@@ -1,0 +1,389 @@
+commit c8f40101e91b3ac8f1129f8c5ed101bd21e4a303
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Fri Jan 31 14:55:24 2025 -0700
+
+    removed images folder
+
+commit 1415c98259856c7c23f3923f051896d49010615a
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Fri Jan 31 14:54:47 2025 -0700
+
+    resolved merging
+
+commit e74466d0be100c9bd0d974aa5ab17f7d632fd74f
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Fri Jan 31 09:51:04 2025 -0700
+
+    added rewards in the file
+
+commit 9f928403fce70710da76888d317fe2bfba7d1baa
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Fri Jan 31 01:10:12 2025 -0700
+
+    added necessary functions for PPO_CleanRL
+
+commit 273264551ca2cb3958557bd439bec42c669b9ca2
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Thu Jan 30 22:53:42 2025 -0700
+
+    removed unncessary files
+
+commit dde729325ba7bad14ed3b1c0c2fb3fd4b67722a3
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Thu Jan 30 22:53:06 2025 -0700
+
+    made ppo generic
+
+commit 749ef7ae641b1f1fca92f9dffe15fb1db887c99a
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Thu Jan 30 20:46:54 2025 -0700
+
+    added evaluation
+
+commit d07a684281e419b29838cb7e2f2db3adaf71ca90
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Thu Jan 30 20:25:16 2025 -0700
+
+    added model saving
+
+commit f08526d4cb2b5779da187733e46c497b3fdd68b8
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Thu Jan 30 19:56:24 2025 -0700
+
+    solved a bug
+
+commit 2bfd1e5c96cda85b56b825b295378203f6539772
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Wed Jan 29 21:38:23 2025 -0700
+
+    added the custom PPO
+
+commit a55985fc369cf6939c16e9fa928b783fc64c9245
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Wed Jan 29 20:29:23 2025 -0700
+
+    added evaluate functions
+
+commit 0c51cfb194d8d4bc28143e695d294fc9b8b31c00
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Wed Jan 29 20:04:33 2025 -0700
+
+    Implemented PPO for multiple actions
+
+commit 0236f261b9a6a6456bb2eddd601f8d3ac1b0ed6d
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Wed Jan 29 11:44:36 2025 -0700
+
+    implemented PPO
+
+commit ef83805bfeb10bc9cab8e1fea4c6e4715d37db73
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Sun Jan 26 17:52:44 2025 -0700
+
+    updated the video
+
+commit 150ce45ca5ff9d0849079c042612c12c4e33d0da
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Thu Jan 23 17:07:36 2025 -0700
+
+    change the reward collection
+
+commit 4d1d6f0f289c97d470eb4c729488b485fb123ff8
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Thu Jan 23 17:00:22 2025 -0700
+
+    added results scripts
+
+commit 997f2919af8d5df2e70ba52dc3ad64da2572543a
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Wed Jan 22 18:22:53 2025 -0700
+
+    allowing actions
+
+commit 56939f43718e5cdc388b4457bdceff0961efd86e
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Tue Jan 21 02:08:55 2025 -0700
+
+    feature: added plotting code with the collected data
+
+commit 3430541d9510e8d95622cad7987033fd923b341f
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Mon Jan 20 23:40:55 2025 -0700
+
+    added checkpointing and some other small changes
+
+commit caa77daefd6bb3a55bab31d6b7c5b860cd33eff6
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Sun Jan 19 22:07:19 2025 -0700
+
+    refactor: changed SAC and PPO of torch, now they work with stable baselines, and added DQN with torch
+
+commit 7d75fc1ac5eeb833ab97d31d8baee752bd2a9bf5
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Sat Jan 18 21:34:19 2025 -0700
+
+    removing unnecessary files
+
+commit 9bc77bcb2588d101b6bfbe5e2b75dc94d3ffcffe
+Author: Mohamed Ayman Mohamed <57917939+mayman150@users.noreply.github.com>
+Date:   Sat Jan 18 21:32:07 2025 -0700
+
+    Update README.md
+
+commit f0e7e6bbe1a0d2f9644781dcfc8e4c1d86b02fd2
+Merge: 2b8689e 8e8c53d
+Author: Mohamed Ayman Mohamed <57917939+mayman150@users.noreply.github.com>
+Date:   Sat Jan 18 21:30:59 2025 -0700
+
+    Merge pull request #1 from machado-research/testing
+    
+    Implemented DQN for validating our environment.
+
+commit 8e8c53dfd067882755cb8104607779832bf584a4
+Merge: a5d7878 2b8689e
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Sat Jan 18 21:30:40 2025 -0700
+
+    merging with the main
+
+commit 2b8689e5b9941c5a3ec8a21efe58d07a1c3af116
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Sat Jan 18 21:25:58 2025 -0700
+
+    resolved the readme
+
+commit df71d9a6035187f0dce1431f19067eb77793b946
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Sat Jan 18 21:23:01 2025 -0700
+
+    added helps for required arguments
+
+commit a5d787828eaf2c0d97c3805864a6ba2ea8afcead
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Sat Jan 18 21:10:42 2025 -0700
+
+    removed unnecessary lines
+
+commit bdc11f11d6efc36976ec5f8d8f61757f39f93ec3
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Sat Jan 18 21:09:46 2025 -0700
+
+    Making the code modular
+
+commit 642245cb632cc816865127cd4004e0ed3b552b1e
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Sat Jan 18 21:04:00 2025 -0700
+
+    removing un-necessary files
+
+commit 172421367e9f9ad3241dfb42ebccbb9a8993afe0
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Mon Jan 13 20:43:55 2025 -0700
+
+    adjusting hyperparameters
+
+commit ddb101e7fb7f74b7cc32d06d9cf3c4c0dc0950f5
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Mon Nov 18 19:56:21 2024 -0700
+
+    changed PPO and SAC
+
+commit 42190999e73ef8c0c8beba3a9a3350eaa4eb90df
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Mon Nov 18 19:55:31 2024 -0700
+
+    changed PPO and SAC
+
+commit 634330306c6babdc2e8efcefffa231747935d72f
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Mon Nov 18 19:11:22 2024 -0700
+
+    changed PPO and SAC
+
+commit 440df0660c2ad20e702b0d7e60ce2818b8b90f93
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Wed Nov 13 13:36:40 2024 -0700
+
+    changes
+
+commit 32a1d917a781803b591936a99be084fab60a6381
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Mon Nov 4 17:44:59 2024 -0700
+
+    some fixes
+
+commit b5ba5d86cf8af30615910880d99723c8e835b094
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Mon Nov 4 17:16:19 2024 -0700
+
+    fixed some issues
+
+commit 77ea052e245d978da080f558b2bdbf51fd14d1f2
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Mon Nov 4 16:44:51 2024 -0700
+
+    some garbage
+
+commit 4c255cc3974875992c6cf84f6fd4d5ade55c644c
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Mon Nov 4 16:28:04 2024 -0700
+
+    Changed a lot of stuff, added jax and added Alex's measurements
+
+commit 38fbef58e0b847ec508524b12e585af083545c2e
+Merge: ebcbe42 c8fa272
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Wed Oct 30 12:50:19 2024 -0600
+
+    Merge remote-tracking branch 'origin/feature/measurements'
+
+commit ef0b4fc737097922c3f9f9567de788e80365deb5
+Author: Mohamed <mohamedayman15069@aucegypt.edu>
+Date:   Thu Oct 24 16:51:40 2024 -0600
+
+    some unneeded stuff
+
+commit c14a549f5b878e12bff86df2456a202e3bd45b21
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Thu Oct 24 11:55:10 2024 -0600
+
+    testing
+
+commit ebcbe421337bd917325bb2a84f201e9d9cc64b6e
+Author: Mohamed Ayman <mohamedayman15069@aucegypt.edu>
+Date:   Thu Oct 24 11:09:31 2024 -0600
+
+    added checkpoints
+
+commit c8fa2721bb56b09bce5fca2d9f47478122ac709c
+Author: AlexLewandowski <lewandowskialexp@gmail.com>
+Date:   Tue Oct 22 01:40:30 2024 -0600
+
+    Add functions for network measurements
+
+commit 481a3bbb46af825f80ec48797c36afffa6eb4374
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Mon Oct 21 17:31:13 2024 -0600
+
+    changed the nets
+
+commit 6bce023da034194ca9deb892e26f7ac99d8d5a29
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Sun Oct 20 22:33:36 2024 -0600
+
+    changed the gitmodule path
+
+commit 377a02b139bb2720308e8dcaf4f74301369d0d15
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Sun Oct 20 22:27:21 2024 -0600
+
+    changed the gitmodule path
+
+commit 899c34497948bc19f8b301253eedb8826eba1c14
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Tue Oct 15 19:12:52 2024 -0600
+
+    corrected the bug of not saving all the results
+
+commit 9130d0717c0325a8184e78567373e99b99dade51
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Sun Oct 13 01:02:41 2024 -0600
+
+    Added CNN architecture for both PPO and SAC
+
+commit a75b4c6417656c5fe0f3ca1f8849a8124f72d76f
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Sat Oct 12 01:49:34 2024 -0600
+
+    Updated the requirements.txt
+
+commit 0dfd5eb98f3994ea2e3cf600a95a15993f5127f1
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Sat Oct 12 01:43:02 2024 -0600
+
+    Added grid search with easy configurations for both PPO and SAC. Have support for both local and slurm, but I need to make sure slurm works
+
+commit 3f79aa8346decbc8a8ffaf6cd6e7826d865d1025
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Fri Oct 11 20:27:47 2024 -0600
+
+    Changed the code a bit to work with the current version of teh Agar
+
+commit 40ba64eaf56bfaaf93877c536a5150e9733c3898
+Merge: 4539201 2b30c22
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Fri Oct 11 15:46:16 2024 -0600
+
+    Merged screen-environment with the main
+
+commit 45392019ad2df80dd04f52f5da43c02d23eb384c
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Fri Oct 11 15:40:50 2024 -0600
+
+    started the gris search
+
+commit 2b30c221a6d311fb8aa195eac0ea415d724b912c
+Author: iamKateryna <kateryna.nekhomiazh@mail.utoronto.ca>
+Date:   Wed Aug 21 19:23:58 2024 -0400
+
+    update requirements and agar module version
+
+commit 162cd6d354d73b81d554cbb5963f1f6d90d634c9
+Author: iamKateryna <kateryna.nekhomiazh@mail.utoronto.ca>
+Date:   Tue Aug 20 12:07:00 2024 -0400
+
+    add wrapper for recording an episode
+
+commit b75da37eb72478afaee1a4e57995401b28590fc2
+Author: iamKateryna <kateryna.nekhomiazh@mail.utoronto.ca>
+Date:   Mon Aug 19 20:13:19 2024 -0400
+
+    update agar submodule version
+
+commit 438a88b74009846df0a51ede3b31b3475dddd5c2
+Author: iamKateryna <kateryna.nekhomiazh@mail.utoronto.ca>
+Date:   Mon Aug 19 20:11:05 2024 -0400
+
+    update .gitignore and requirements.txt
+
+commit 6901340f9b541489d3fda2eab3decc4dd03bb616
+Author: iamKateryna <kateryna.nekhomiazh@mail.utoronto.ca>
+Date:   Mon Aug 19 18:53:46 2024 -0400
+
+    update gym to gymnasium, add truncations
+
+commit ec3a3e6070ef7961db8fd3c53ae8f8a0776610c0
+Author: iamKateryna <kateryna.nekhomiazh@mail.utoronto.ca>
+Date:   Mon Aug 19 18:52:54 2024 -0400
+
+    update submodule version
+
+commit 7b705a649bafb75e8249114aff916d4e119ec365
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Wed Aug 7 09:59:19 2024 -0600
+
+    Refactored the code and made a wrapper for the algorithms.
+
+commit bff443f661a671f258460930fe35d21f36aa176c
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Wed Aug 7 09:49:14 2024 -0600
+
+    Refactored the code and made a wrapper for the algorithms.
+
+commit 809799ca1eb6be8fdb74939a276bb491196837df
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Tue Jul 30 01:21:26 2024 -0600
+
+    Hybrid and continuous action version of PPO and SAC
+
+commit 9ae1f2a3498b6b4db53fb01bd54cc62ce728d911
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Wed Jul 3 11:13:14 2024 +0400
+
+    Added rendering flag and changed the values of he action space
+
+commit 185cdb57288f3fc9bc659d16d02a39cd06bed7fa
+Author: anna-ssi <annahakhverdyan98@gmail.com>
+Date:   Wed Jul 3 10:33:59 2024 +0400
+
+    Running version of SAC and PPO on AgarLE. I used the cleanRL implementation for them.

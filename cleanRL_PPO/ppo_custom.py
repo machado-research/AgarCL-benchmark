@@ -34,7 +34,8 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
 
     def observation(self, observation):
-        return observation.transpose(0, 3, 1, 2)
+        normalized = (observation - np.mean(observation) )/ np.std(observation)
+        return normalized.transpose(0, 3, 1, 2)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
@@ -44,7 +45,7 @@ class ObservationWrapper(gym.ObservationWrapper):
 class Args:
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
     """the name of this experiment"""
-    seed: int = 1
+    seed: int = 42
     """seed of the experiment"""
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
@@ -68,13 +69,13 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "agario-screen-v0"
     """the id of the environment"""
-    total_timesteps: int = 100000
+    total_timesteps: int = 200000
     """total timesteps of the experiments"""
     learning_rate: float = 3e-4
     """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    num_steps: int = 100
+    num_steps: int = 300
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = True
     """Toggle learning rate annealing for policy and value networks"""
@@ -82,17 +83,17 @@ class Args:
     """the discount factor gamma"""
     gae_lambda: float = 0.95
     """the lambda for the general advantage estimation"""
-    num_minibatches: int = 64
+    num_minibatches: int = 32
     """the number of mini-batches"""
-    update_epochs: int = 15
+    update_epochs: int = 10
     """the K epochs to update the policy"""
     norm_adv: bool = True
     """Toggles advantages normalization"""
-    clip_coef: float = 0.3
+    clip_coef: float = 0.2
     """the surrogate clipping coefficient"""
     clip_vloss: bool = True
     """Toggles whether or not to use a clipped loss for the value function, as per the paper."""
-    ent_coef: float = 0.001
+    ent_coef: float = 0.005
     """coefficient of the entropy"""
     vf_coef: float = 0.5
     """coefficient of the value function"""
@@ -114,47 +115,47 @@ def make_env(env_id, idx, capture_video, run_name, gamma):
     env_config = json.load(open('/home/mamm/ayman/thesis/AgarLE-benchmark/env_config.json', 'r'))
     env = gym.make(env_id, **env_config)
     # env = gym.wrappers.FlattenObservation(env)  # deal with dm_control's Dict observation space
-    env = gym.wrappers.RecordEpisodeStatistics(env)
-    env = gym.wrappers.NormalizeObservation(env)
-    env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+    # env = gym.wrappers.RecordEpisodeStatistics(env)
+    # env = gym.wrappers.NormalizeObservation(env)
+    # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
     env = MultiActionWrapper(env)
     env = ObservationWrapper(env)
     # env = gym.wrappers.ClipAction(env)
     
     # env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-    # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+    # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, 0, 1))
     return env
 
 
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
-    torch.nn.init.orthogonal_(layer.weight, std)
-    torch.nn.init.constant_(layer.bias, bias_const)
-    return layer
+# def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+#     torch.nn.init.orthogonal_(layer.weight, std)
+#     torch.nn.init.constant_(layer.bias, bias_const)
+#     return layer
 
 
-class LambdaLayer(nn.Module):
-    def __init__(self, lambd):
-        super(LambdaLayer, self).__init__()
-        self.lambd = lambd
+# class LambdaLayer(nn.Module):
+#     def __init__(self, lambd):
+#         super(LambdaLayer, self).__init__()
+#         self.lambd = lambd
 
-    def forward(self, x):
-        return self.lambd(x)
+#     def forward(self, x):
+#         return self.lambd(x)
 
 class Agent(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.critic = nn.Sequential(
-            layer_init(nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1)),
+            nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
             nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
             nn.ReLU(),
-            layer_init(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1)),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),
             nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the second Conv2d layer
             nn.ReLU(),
             nn.Flatten(),
-            layer_init(nn.Linear(64 * 106* 106, 256)),
+            nn.Linear(64 * 106* 106, 256),
             nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
             nn.ReLU(),
-            layer_init(nn.Linear(256, 1), std=1.0),
+            nn.Linear(256, 1),
         )
         self.actor_mean = nn.Sequential(
             nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
@@ -164,17 +165,13 @@ class Agent(nn.Module):
             nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the additional Conv2d layer
             nn.ReLU(),
             nn.Flatten(),
-            layer_init(nn.Linear(64 * 106* 106, 256)),
+            nn.Linear(64 * 106* 106, 256),
             nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
             nn.ReLU(),
-            layer_init(nn.Linear(256, 2)) # 2 continuous actions
+            nn.Linear(256, 2) # 2 continuous actions
             )
-        
-        # self.actor_logstd = nn.Parameter(torch.zeros(1, 3))
-         # Separate outputs for continuous and discrete actions
-        # self.actor_mean = layer_init(nn.Linear(256, 2))  # 2 continuous actions
-        self.actor_logstd = nn.Parameter(torch.zeros(1, 2))
-        # self.actor_discrete = layer_init(nn.Linear(256, 3))  # 3 discrete actions (logits)
+
+        self.actor_logstd = nn.Parameter(torch.zeros(1, 2, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")))
 
     def get_value(self, x):
         return self.critic(x)
@@ -183,6 +180,10 @@ class Agent(nn.Module):
         action_mean = self.actor_mean(x)
         action_logstd = self.actor_logstd.expand_as(action_mean)
         action_std = torch.exp(action_logstd)
+        if torch.isnan(action_std).any():
+            import pdb; pdb.set_trace()
+            raise ValueError("NaN values found in action_std")
+        # import pdb; pdb.set_trace()
         probs = Normal(action_mean, action_std)
         if action is None:
             action = probs.sample()
@@ -243,7 +244,11 @@ if __name__ == "__main__":
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
     )
-
+    # Save the args in a CSV file
+    args_file_path = f"runs/{run_name}/args.csv"
+    with open(args_file_path, "w") as f:
+        for key, value in vars(args).items():
+            f.write(f"{key},{value}\n")
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -288,6 +293,8 @@ if __name__ == "__main__":
             lrnow = frac * args.learning_rate
             optimizer.param_groups[0]["lr"] = lrnow
 
+        
+        
         for step in range(0, args.num_steps):
             global_step += args.num_envs
             obs[step] = next_obs
@@ -299,31 +306,23 @@ if __name__ == "__main__":
                 episodic_reward = 0
                 next_obs, _ = envs.reset()
                 next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
-                print(f"Episode Reward: {episodic_reward}")
-                with open(f"runs/{run_name}/rewards.csv", "a") as f:
-                    f.write(f"{global_step},{episodic_reward}\n")
-                episodic_reward = 0
                 
+                                
             # ALGO LOGIC: action logic
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
                 values[step] = value.flatten()
             actions[step] = action
             logprobs[step] = logprob
-
+            step_loop_SPS = time.time()
             next_obs, reward, terminations, truncations, infos = envs.step(action[0].cpu().numpy())
+            print(f"SPS in STEP LOOP: {1.0 / (time.time() - step_loop_SPS)}")
             next_done = np.logical_or(terminations, truncations).astype(np.float32)
             rewards[step] = torch.tensor(reward).to(device).view(-1)
             next_obs, next_done = torch.tensor(next_obs, dtype=torch.float32).to(device), torch.tensor(next_done, dtype=torch.float32).to(device)
-            episodic_reward += reward
-            # if "final_info" in infos:
-                # for info in infos["final_info"]:
-                    # if info and "episode" in info:
-
-                        # writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                        # writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
-                
-        # import pdb; pdb.set_trace()
+            episodic_reward += infos['untransformed_rewards']
+        
+        print(f"SPS in STEP LOOP: {args.num_steps / (time.time() - step_loop_SPS)}")
 
         # bootstrap value if not done
         with torch.no_grad():
@@ -350,6 +349,7 @@ if __name__ == "__main__":
         b_values = values.reshape(-1)
 
         # Optimizing the policy and value network
+        SPS_optimization = time.time()
         b_inds = np.arange(args.batch_size)
         clipfracs = []
         for epoch in range(args.update_epochs):
@@ -393,7 +393,8 @@ if __name__ == "__main__":
 
                 entropy_loss = entropy.mean()
                 loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
-
+                
+                # import pdb; pdb.set_trace()
                 optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(agent.parameters(), args.max_grad_norm)
@@ -401,26 +402,28 @@ if __name__ == "__main__":
 
             if args.target_kl is not None and approx_kl > args.target_kl:
                 break
-
+        
+        print(f"SPS in OPTIMIZATION: {args.update_epochs / (time.time() - SPS_optimization)}")
         y_pred, y_true = b_values.cpu().numpy(), b_returns.cpu().numpy()
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         # Print the metrics
-        print(f"Learning Rate: {optimizer.param_groups[0]['lr']}")
-        print(f"Value Loss: {v_loss.item()}")
-        print(f"Policy Loss: {pg_loss.item()}")
-        print(f"Entropy: {entropy_loss.item()}")
-        print(f"Old Approx KL: {old_approx_kl.item()}")
-        print(f"Approx KL: {approx_kl.item()}")
-        print(f"Clip Fraction: {np.mean(clipfracs)}")
-        print(f"Explained Variance: {explained_var}")
+        # print(f"Learning Rate: {optimizer.param_groups[0]['lr']}")
+        # print(f"Value Loss: {v_loss.item()}")
+        # print(f"Policy Loss: {pg_loss.item()}")
+        # print(f"Entropy: {entropy_loss.item()}")
+        # print(f"Old Approx KL: {old_approx_kl.item()}")
+        # print(f"Approx KL: {approx_kl.item()}")
+        # print(f"Clip Fraction: {np.mean(clipfracs)}")
+        # print(f"Explained Variance: {explained_var}")
         print("SPS:", int(global_step / (time.time() - start_time)))
 
         # Write the metrics to a CSV file
-        with open(f"runs/{run_name}/metrics.csv", "a") as f:
-            f.write(f"{global_step},{optimizer.param_groups[0]['lr']},{v_loss.item()},{pg_loss.item()},{entropy_loss.item()},{old_approx_kl.item()},{approx_kl.item()},{np.mean(clipfracs)},{explained_var},{int(global_step / (time.time() - start_time))}\n")
+        if(global_step % 2000 == 0):
+            with open(f"runs/{run_name}/metrics.csv", "a") as f:
+                f.write(f"{global_step},{optimizer.param_groups[0]['lr']},{v_loss.item()},{pg_loss.item()},{entropy_loss.item()},{old_approx_kl.item()},{approx_kl.item()},{np.mean(clipfracs)},{explained_var},{int(global_step / (time.time() - start_time))}\n")
         # Save the model if there is no model or if the rewards are better
         
         if rewards.sum().item() > best_reward:
