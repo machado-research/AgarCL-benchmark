@@ -119,7 +119,7 @@ def main():
     parser.add_argument(
         "--update-interval",
         type=int,
-        default=300,
+        default=1000,
         help="Interval in timesteps between model updates.",
     )
     parser.add_argument(
@@ -130,10 +130,10 @@ def main():
     )
     
     parser.add_argument(
-        "--clip-eps", type=float, default=0.2, help="Clipping parameter for PPO.")
+        "--clip-eps", type=float, default=0.3, help="Clipping parameter for PPO.")
     
     parser.add_argument(
-        "--entropy-coef", type=float, default=0.001, help="Entropy coefficient for PPO.")
+        "--entropy-coef", type=float, default=0.005, help="Entropy coefficient for PPO.")
     
     parser.add_argument(
         "--clip-eps-vf", type=float, default=0.001, help="Clipping parameter for the value function.")

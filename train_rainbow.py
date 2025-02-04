@@ -15,7 +15,7 @@ from pfrl.q_functions import DistributionalDuelingDQN
 from pfrl.wrappers import atari_wrappers
 from src.wrappers.gym import make_env
 
-from gym import spaces
+# from gym import spaces
 
 class DiscreteActions(gym.ActionWrapper):
     def __init__(self, env):
@@ -62,17 +62,17 @@ class ModifyObservationWrapper(gym.ObservationWrapper):
         # Modify the observation here
         # Normalize the observation
         modified_observation = observation.transpose(0, 3, 1, 2)[0]
-        # modeified_observation = modified_observation/255
-        # modified_observation = (modified_observation - np.mean(modified_observation)) / np.std(modified_observation)
+        # modeified_observation = modified_observation/255.0
+        modified_observation = (modified_observation - np.mean(modified_observation)) / np.std(modified_observation)
         
         # Normalize the observation
         return modified_observation
 
     def reset(self, **kwargs):
-        obs = self.env.reset(**kwargs)
+        obs, info = self.env.reset(**kwargs)
         obs = obs.transpose(0,3,1,2)[0]
-        # obs = (obs - np.mean(obs)) / np.std(obs)
-        info = {}  # Add any additional information you want in the info dictionary
+        obs = (obs - np.mean(obs)) / np.std(obs)
+        # info = {}  # Add any additional information you want in the info dictionary
         return obs, info
 
 
@@ -221,13 +221,13 @@ def main():
     if args.num_layers == 2:
         q_func = nn.Sequential(
             nn.Conv2d(4, 64, kernel_size=16, stride=1),
-            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
             nn.ReLU(),
             nn.Conv2d(64, 32, kernel_size=8, stride=1),
-            nn.LayerNorm([32, 62, 62]),  # Add LayerNorm after the second Conv2d layer
+            nn.LayerNorm([32, 106, 106]),  # Add LayerNorm after the second Conv2d layer
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * 62 * 62, 128),  # Adjust the input size according to the output of Conv2d
+            nn.Linear(32 * 106 * 106, 128),  # Adjust the input size according to the output of Conv2d
             nn.LayerNorm(128),  # Add LayerNorm after the first Linear layer
             nn.ReLU(),
             DistributionalDuelingHead(128, n_actions, n_atoms, v_min, v_max),
@@ -236,10 +236,10 @@ def main():
     #One Layer
         q_func = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=16, stride=1),
-            nn.LayerNorm([64, 69, 69]),  # Add LayerNorm after the first Conv2d layer
+            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64 * 69 * 69, 256),  # Adjust the input size according to the output of Conv2d
+            nn.Linear(64 * 113 * 113, 256),  # Adjust the input size according to the output of Conv2d
             nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer, 
             nn.ReLU(),
             DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
