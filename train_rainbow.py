@@ -21,10 +21,7 @@ class DiscreteActions(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
         self.action_space = gym.spaces.Discrete(8)
-
-    def action(self, action):
-        # Map the discrete action to (dx, dy)
-        action_mappings = [
+        self.action_mappings = [
             np.array([0, 1], dtype=np.float32),   # Up
             np.array([1, 1], dtype=np.float32),   # Up-Right
             np.array([1, 0], dtype=np.float32),   # Right
@@ -34,9 +31,13 @@ class DiscreteActions(gym.ActionWrapper):
             np.array([-1, 0], dtype=np.float32),  # Left
             np.array([-1, 1], dtype=np.float32),  # Up-Left
         ]
+
+    def action(self, action):
+        # Map the discrete action to (dx, dy)
+        
         # Ensure action is within valid range
-        assert 0 <= action < len(action_mappings)
-        dx_dy = action_mappings[action]
+        assert 0 <= action < len(self.action_mappings)
+        dx_dy = self.action_mappings[action]
         # Discrete action is always 0 (noop)
         return (dx_dy, # In the `DiscreteActions` class, the `action` method is mapping the discrete
         # action index to a corresponding (dx, dy) movement. The `0` in the line
@@ -61,18 +62,15 @@ class ModifyObservationWrapper(gym.ObservationWrapper):
     def observation(self, observation):
         # Modify the observation here
         # Normalize the observation
-        modified_observation = observation.transpose(0, 3, 1, 2)[0]
-        # modeified_observation = modified_observation/255.0
-        modified_observation = (modified_observation - np.mean(modified_observation)) / np.std(modified_observation)
-        
+        modified_observation = observation[0].transpose(2, 0, 1)
+        modified_observation = modified_observation/255.0        
         # Normalize the observation
         return modified_observation
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        obs = obs.transpose(0,3,1,2)[0]
-        obs = (obs - np.mean(obs)) / np.std(obs)
-        # info = {}  # Add any additional information you want in the info dictionary
+        obs = obs[0].transpose(2,0,1)
+        obs = obs/255.0
         return obs, info
 
 

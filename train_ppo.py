@@ -21,7 +21,7 @@ from pfrl.wrappers import atari_wrappers
 from src.wrappers.gym import make_env
 
 from pfrl.agents import PPO
-from gym import spaces
+# from gym import spaces
 
 import functools
 
@@ -40,19 +40,20 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
 
     def observation(self, observation):
-        normalized = (observation - np.mean(observation) )/ (np.std(observation) + 1e-8)
-        return observation.transpose(0, 3, 1, 2)[0]
+        observation = observation/255.0
+        # normalized = (observation - np.mean(observation) )/ (np.std(observation) + 1e-8)
+        return observation[0].transpose(2, 0, 1)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        normalized = (obs - np.mean(obs) )/ (np.std(obs) + 1e-8)
-        return obs.transpose(0, 3, 1, 2)[0], info
+        obs = obs/255.0
+        return obs[0].transpose(2, 0, 1), info
 
 
 import os
 def main():
     import logging
-
+    assert torch.cuda.is_available()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--gpu", type=int, default=0, help="GPU to use, set to -1 if no GPU."
@@ -119,33 +120,33 @@ def main():
     parser.add_argument(
         "--update-interval",
         type=int,
-        default=1000,
+        default=300,
         help="Interval in timesteps between model updates.",
     )
     parser.add_argument(
         "--epochs",
         type=int,
-        default=20,
+        default=15,
         help="Number of epochs to update model for per PPO iteration.",
     )
-    
+
     parser.add_argument(
-        "--clip-eps", type=float, default=0.3, help="Clipping parameter for PPO.")
-    
+        "--clip-eps", type=float, default=0.4, help="Clipping parameter for PPO.")
+
     parser.add_argument(
-        "--entropy-coef", type=float, default=0.005, help="Entropy coefficient for PPO.")
-    
+        "--entropy-coef", type=float, default=0.01, help="Entropy coefficient for PPO.")
+
     parser.add_argument(
         "--clip-eps-vf", type=float, default=0.001, help="Clipping parameter for the value function.")
-    
+
     parser.add_argument(
         "--value-func-coef", type=float, default=0.4, help="Value function coefficient for PPO.")
-    
+
     parser.add_argument(
         "--max-grad-norm", type=float, default=0.5, help="Maximum norm of gradients.")
-    
-    
-    
+
+
+
     parser.add_argument("--batch-size", type=int, default=32, help="Minibatch size")
     args = parser.parse_args()
 
@@ -159,7 +160,7 @@ def main():
     # If seed=1 and processes=4, subprocess seeds are [4, 5, 6, 7].
     process_seeds = np.arange(args.num_envs) + args.seed * args.num_envs
     assert process_seeds.max() < 2**32
-    
+
     args.outdir = experiments.prepare_output_dir(args, args.outdir)
 
     def make_env(process_idx, test):
@@ -179,7 +180,7 @@ def main():
         #     env = pfrl.wrappers.Monitor(env, args.outdir)
         # if args.render:
         #     env = pfrl.wrappers.Render(env)
-        
+
         return env
 
     def make_batch_env(test):
@@ -211,37 +212,35 @@ def main():
     # action_size = action_space.low.size
     action_size = 2
     policy = torch.nn.Sequential(
-        nn.Conv2d(in_channels=obs_shape[0], out_channels=64, kernel_size=16, stride=1),
-        nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
-        nn.Tanh(),
-        nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),  # Additional Conv2d layer
-        nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the additional Conv2d layer
-        nn.Tanh(),
-        nn.Flatten(),
-        nn.Linear(64 * 106 * 106, 256),
-        nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
-        nn.Tanh(),
-        nn.Linear(256, action_size),  # 2 continuous actions
-        pfrl.policies.GaussianHeadWithStateIndependentCovariance(
-            action_size=action_size,
-            var_type="diagonal",
-            var_func=lambda x: torch.exp(2 * x),  # Parameterize log std
-            var_param_init=0,  # log std = 0 => std = 1
-        ),
+            nn.Conv2d(obs_shape[0], 16, kernel_size=64, stride=1),
+            nn.LayerNorm([16, 65, 65]),  # Add LayerNorm after the first Conv2d layer
+            nn.Tanh(),
+            nn.Conv2d(16, 8, kernel_size=16, stride=1),
+            nn.LayerNorm([8, 50, 50]),  # Add LayerNorm after the second Conv2d layer
+            nn.Tanh(),
+            nn.Flatten(),
+            nn.Linear(8 * 50 * 50, 128),  # Adjust the input size according to the output of Conv2d
+            nn.Tanh(),
+            nn.Linear(128, action_size),  # 2 continuous actions
+            pfrl.policies.GaussianHeadWithStateIndependentCovariance(
+                action_size=action_size,
+                var_type="diagonal",
+                var_func=lambda x: torch.exp(2 * x),  # Parameterize log std
+                var_param_init=0,  # log std = 0 => std = 1
+            ),
     )
-       
+
     vf = torch.nn.Sequential(
-        nn.Conv2d(in_channels=obs_shape[0], out_channels=64, kernel_size=16, stride=1),
-        nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
-        nn.ReLU(),
-        nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),
-        nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the second Conv2d layer
-        nn.ReLU(),
-        nn.Flatten(),
-        nn.Linear(64 * 106 * 106, 256),
-        nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
-        nn.ReLU(),
-        nn.Linear(256, 1),
+        nn.Conv2d(obs_shape[0], 16, kernel_size=64, stride=1),
+            nn.LayerNorm([16, 65, 65]),  # Add LayerNorm after the first Conv2d layer
+            nn.Tanh(),
+            nn.Conv2d(16, 8, kernel_size=16, stride=1),
+            nn.LayerNorm([8, 50, 50]),  # Add LayerNorm after the second Conv2d layer
+            nn.Tanh(),
+            nn.Flatten(),
+            nn.Linear(8 * 50 * 50, 128),  # Adjust the input size according to the output of Conv2d
+            nn.Tanh(),
+            nn.Linear(128, 1),
     )
 
     # While the original paper initialized weights by normal distribution,
