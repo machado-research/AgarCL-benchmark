@@ -34,7 +34,7 @@ class Args:
     """whether to capture videos of the agent performances (check out `videos` folder)"""
 
     # Algorithm specific arguments
-    env_id: str = "CartPole-v1"
+    env_id: str = "SpaceInvaders-v0"
     """the id of the environment"""
     total_timesteps: int = 500000
     """total timesteps of the experiments"""
@@ -42,7 +42,7 @@ class Args:
     """the learning rate of the optimizer"""
     num_envs: int = 1
     """the number of parallel game environments"""
-    buffer_size: int = 10000
+    buffer_size: int = 100000
     """the replay memory buffer size"""
     gamma: float = 0.99
     """the discount factor gamma"""
@@ -71,6 +71,29 @@ class Args:
     cudagraphs: bool = False
     """whether to use cudagraphs on top of compile."""
 
+class ModifyObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        # Modify observation space if needed
+        obs_shape = env.observation_space.shape
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(obs_shape[2], obs_shape[0], obs_shape[1]), dtype=np.float32)
+        
+
+    def observation(self, observation):
+        # Modify the observation here
+        # Normalize the observation
+        modified_observation = observation.transpose(2, 0, 1)
+        modified_observation = modified_observation/255.0        
+        # Normalize the observation
+        return modified_observation
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        obs = obs.transpose(2, 0, 1) / 255.0
+        return obs, info
+
+
+
 
 def make_env(env_id, seed, idx, capture_video, run_name):
     def thunk():
@@ -81,6 +104,7 @@ def make_env(env_id, seed, idx, capture_video, run_name):
             env = gym.make(env_id)
         env = gym.wrappers.RecordEpisodeStatistics(env)
         env.action_space.seed(seed)
+        env = ModifyObservationWrapper(env)
 
         return env
 
@@ -92,13 +116,20 @@ class QNetwork(nn.Module):
     def __init__(self, n_obs, n_act, device=None):
         super().__init__()
         self.network = nn.Sequential(
-            nn.Linear(n_obs, 120, device=device),
+            nn.Conv2d(n_obs, 64, kernel_size=8, stride=4),
+            nn.LayerNorm([64, 51, 39]),  # Add LayerNorm after the first Conv2d layer
             nn.ReLU(),
-            nn.Linear(120, 84, device=device),
+            nn.Conv2d(64, 32, kernel_size=4, stride=2),
+            nn.LayerNorm([32, 24, 18]),  # Add LayerNorm after the second Conv2d layer
             nn.ReLU(),
-            nn.Linear(84, n_act, device=device),
+            nn.Flatten(),
+            nn.Linear(32 * 24 * 18, 128),  # Adjust the input size according to the output of Conv2d
+            nn.LayerNorm(128),  # Add LayerNorm after the first Linear layer
+            nn.ReLU(),
+            nn.Linear(128, n_act),
         )
-
+        self.device = device
+        self.to(device)
     def forward(self, x):
         return self.network(x)
 
@@ -115,12 +146,12 @@ if __name__ == "__main__":
     assert args.num_envs == 1, "vectorized envs are not supported at the moment"
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{args.compile}__{args.cudagraphs}"
 
-    wandb.init(
-        project="dqn",
-        name=f"{os.path.splitext(os.path.basename(__file__))[0]}-{run_name}",
-        config=vars(args),
-        save_code=True,
-    )
+    # wandb.init(
+    #     project="dqn",
+    #     name=f"{os.path.splitext(os.path.basename(__file__))[0]}-{run_name}",
+    #     config=vars(args),
+    #     save_code=True,
+    # )
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -129,15 +160,15 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda:0" if torch.cuda.is_available() and args.cuda else "cpu")
-
+    print("DEVICE:", device)
     # env setup
     envs = gym.vector.SyncVectorEnv(
         [make_env(args.env_id, args.seed + i, i, args.capture_video, run_name) for i in range(args.num_envs)]
     )
 
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
-    n_act = envs.single_action_space.n
-    n_obs = math.prod(envs.single_observation_space.shape)
+    n_act = 1
+    n_obs = 3
 
     q_network = QNetwork(n_obs=n_obs, n_act=n_act, device=device)
     q_network_detach = QNetwork(n_obs=n_obs, n_act=n_act, device=device)
@@ -164,11 +195,11 @@ if __name__ == "__main__":
         return loss.detach()
 
     def policy(obs, epsilon):
-        q_values = q_network_detach(obs)
+        q_values = q_network_detach(obs.to(q_network_detach.network[0].weight.device))
         actions = torch.argmax(q_values, dim=1)
         actions_random = torch.rand(actions.shape, device=actions.device).mul(n_act).floor().to(torch.long)
         # actions_random = torch.randint_like(actions, n_act)
-        use_policy = torch.rand(actions.shape, device=actions.device).gt(epsilon)
+        use_policy = torch.rand(actions.shape, device=actions.device).gt(epsilon.to(actions.device))
         return torch.where(use_policy, actions, actions_random)
 
     rb = ReplayBuffer(storage=LazyTensorStorage(args.buffer_size, device=device))
@@ -198,8 +229,8 @@ if __name__ == "__main__":
             global_step_start = global_step
 
         # ALGO LOGIC: put action logic here
-        epsilon = next(eps_schedule)
-        actions = policy(obs, epsilon)
+        epsilon = next(eps_schedule).to(device)
+        actions = policy(obs, epsilon).to(device=device)
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = envs.step(actions.cpu().numpy())
@@ -223,17 +254,18 @@ if __name__ == "__main__":
                 real_next_obs[idx] = torch.as_tensor(infos["final_observation"][idx], device=device, dtype=torch.float)
         if real_next_obs is None:
             real_next_obs = next_obs
-        # obs = torch.as_tensor(obs, device=device, dtype=torch.float)
+        obs = torch.as_tensor(obs, device=device, dtype=torch.float)
+        assert torch.cuda.is_available()
         transitions.append(
             TensorDict._new_unsafe(
-                observations=obs,
-                next_observations=real_next_obs,
-                actions=actions,
-                rewards=rewards,
-                terminations=terminations,
-                dones=terminations,
-                batch_size=obs.shape[:1],
-                device=device,
+            observations=obs.to(device),
+            next_observations=real_next_obs.to(device),
+            actions=actions.to(device),
+            rewards=rewards.to(device),
+            terminations=terminations.to(device),
+            dones=terminations.to(device),
+            batch_size=obs.shape[:1],
+            device=device,
             )
         )
 
@@ -245,7 +277,7 @@ if __name__ == "__main__":
             if global_step % args.train_frequency == 0:
                 rb.extend(torch.cat(transitions))
                 transitions = []
-                data = rb.sample(args.batch_size)
+                data = rb.sample(args.batch_size).to(device)
                 loss = update(data)
             # update target network
             if global_step % args.target_network_frequency == 0:
@@ -253,19 +285,19 @@ if __name__ == "__main__":
 
         if global_step % 100 == 0 and start_time is not None:
             speed = (global_step - global_step_start) / (time.time() - start_time)
-            pbar.set_description(f"speed: {speed: 4.2f} sps, " f"epsilon: {epsilon.cpu().item(): 4.2f}, " + desc)
+            pbar.set_description(f"speed: {speed: 4.2f} sps, " f"epsilon: {epsilon.cpu().item(): 4.2f}, ")
             with torch.no_grad():
                 logs = {
                     "episode_return": torch.tensor(avg_returns).mean(),
                     "loss": loss.mean(),
                     "epsilon": epsilon,
                 }
-            wandb.log(
-                {
-                    "speed": speed,
-                    **logs,
-                },
-                step=global_step,
-            )
+            # wandb.log(
+            #     {
+            #         "speed": speed,
+            #         **logs,
+            #     },
+            #     step=global_step,
+            # )
 
     envs.close()
