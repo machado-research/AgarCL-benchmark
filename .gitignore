@@ -10,7 +10,9 @@ tmp/
 videos/
 wandb/
 plots/
-
+venv/
+res/
+agar/
 # ignore python caches
 .venv/
 venv/
@@ -32,4 +34,4 @@ jobs/*.txt
 .history
 
 *.zip
-agar/
+
