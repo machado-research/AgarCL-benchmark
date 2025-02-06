@@ -13,6 +13,7 @@ from pfrl.initializers import init_chainer_default
 from pfrl.q_functions import DiscreteActionValueHead
 import gym_agario
 
+import torch
 
 class ModifyObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
@@ -226,10 +227,9 @@ def main():
     #     eps=1e-2,
     #     centered=True,
     # )
-    import torch
     opt = torch.optim.Adam(q_func.parameters(), 6.25e-5, eps=1.5 * 10**-4)
 
-    rbuf = replay_buffers.ReplayBuffer(10**5)
+    rbuf = replay_buffers.ReplayBuffer(5 * 10**4)
 
     explorer = explorers.LinearDecayEpsilonGreedy(
         start_epsilon=1.0,

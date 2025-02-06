@@ -19,6 +19,7 @@ from pfrl import replay_buffers, utils
 from pfrl.q_functions import DistributionalDuelingDQN
 from pfrl.wrappers import atari_wrappers
 from src.wrappers.gym import make_env
+from pfrl.initializers import init_chainer_default
 
 from pfrl.agents import PPO
 # from gym import spaces
@@ -40,13 +41,10 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
 
     def observation(self, observation):
-        observation = observation/255.0
-        # normalized = (observation - np.mean(observation) )/ (np.std(observation) + 1e-8)
         return observation[0].transpose(2, 0, 1)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        obs = obs/255.0
         return obs[0].transpose(2, 0, 1), info
 
 
@@ -204,6 +202,39 @@ def main():
 
     # Normalize observations based on their empirical mean and variance
     obs_shape = (obs_space.shape[3], obs_space.shape[1], obs_space.shape[2])
+    
+    
+    class CustomCNN(nn.Module):
+        def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
+            super().__init__()
+            self.n_input_channels = n_input_channels
+            self.activation = activation
+            self.n_output_channels = n_output_channels
+            self.layers = nn.ModuleList(
+                [
+                    nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
+                    nn.Conv2d(32, 64, 4, stride=2),
+                    nn.Conv2d(64, 32, 3, stride=1),
+                ]
+            )
+            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
+
+            self.apply(init_chainer_default)
+            self.apply(self.constant_bias_initializer(bias=bias))
+
+        def constant_bias_initializer(self, bias=0.1):
+            def init(m):
+                if isinstance(m, nn.Linear):
+                    nn.init.constant_(m.bias, bias)
+            return init
+
+        def forward(self, state):
+            h = state
+            for layer in self.layers:
+                h = self.activation(layer(h))
+            h_flat = h.view(h.size(0), -1)
+            return self.activation(self.output(h_flat))
+        
     obs_normalizer = pfrl.nn.EmpiricalNormalization(
         obs_shape, clip_threshold=5
     )
@@ -211,18 +242,11 @@ def main():
     obs_size = obs_space.low.size
     # action_size = action_space.low.size
     action_size = 2
-    policy = torch.nn.Sequential(
-            nn.Conv2d(obs_shape[0], 16, kernel_size=64, stride=1),
-            nn.LayerNorm([16, 65, 65]),  # Add LayerNorm after the first Conv2d layer
-            nn.Tanh(),
-            nn.Conv2d(16, 8, kernel_size=16, stride=1),
-            nn.LayerNorm([8, 50, 50]),  # Add LayerNorm after the second Conv2d layer
-            nn.Tanh(),
-            nn.Flatten(),
-            nn.Linear(8 * 50 * 50, 128),  # Adjust the input size according to the output of Conv2d
-            nn.Tanh(),
-            nn.Linear(128, action_size),  # 2 continuous actions
-            pfrl.policies.GaussianHeadWithStateIndependentCovariance(
+    policy = nn.Sequential(
+        CustomCNN(n_input_channels=4, n_output_channels=128),
+        nn.ReLU(),
+        init_chainer_default(nn.Linear(128, 2)),
+        pfrl.policies.GaussianHeadWithStateIndependentCovariance(
                 action_size=action_size,
                 var_type="diagonal",
                 var_func=lambda x: torch.exp(2 * x),  # Parameterize log std
@@ -231,30 +255,23 @@ def main():
     )
 
     vf = torch.nn.Sequential(
-        nn.Conv2d(obs_shape[0], 16, kernel_size=64, stride=1),
-            nn.LayerNorm([16, 65, 65]),  # Add LayerNorm after the first Conv2d layer
-            nn.Tanh(),
-            nn.Conv2d(16, 8, kernel_size=16, stride=1),
-            nn.LayerNorm([8, 50, 50]),  # Add LayerNorm after the second Conv2d layer
-            nn.Tanh(),
-            nn.Flatten(),
-            nn.Linear(8 * 50 * 50, 128),  # Adjust the input size according to the output of Conv2d
-            nn.Tanh(),
-            nn.Linear(128, 1),
+        CustomCNN(n_input_channels=4, n_output_channels=128),
+        nn.ReLU(),
+        init_chainer_default(nn.Linear(128, 1)),
     )
 
     # While the original paper initialized weights by normal distribution,
     # we use orthogonal initialization as the latest openai/baselines does.
-    def ortho_init(layer, gain):
-        nn.init.orthogonal_(layer.weight, gain=gain)
-        nn.init.zeros_(layer.bias)
+    # def ortho_init(layer, gain):
+    #     nn.init.orthogonal_(layer.weight, gain=gain)
+    #     nn.init.zeros_(layer.bias)
 
-    ortho_init(policy[0], gain=1)
-    ortho_init(policy[3], gain=1)
-    ortho_init(policy[7], gain=1e-2)
-    ortho_init(vf[0], gain=1)
-    ortho_init(vf[3], gain=1)
-    ortho_init(vf[7], gain=1)
+    # ortho_init(policy[0], gain=1)
+    # ortho_init(policy[3], gain=1)
+    # ortho_init(policy[7], gain=1e-2)
+    # ortho_init(vf[0], gain=1)
+    # ortho_init(vf[3], gain=1)
+    # ortho_init(vf[7], gain=1)
 
     # Combine a policy and a value function into a single model
     model = pfrl.nn.Branched(policy, vf)
@@ -264,7 +281,7 @@ def main():
     agent = PPO(
         model,
         opt,
-        obs_normalizer=None,
+        obs_normalizer=obs_normalizer,
         gpu=args.gpu,
         update_interval=args.update_interval,
         minibatch_size=args.batch_size,
