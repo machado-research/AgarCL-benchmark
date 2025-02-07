@@ -15,6 +15,41 @@ import gym_agario
 
 import torch
 
+
+class CustomCNN(nn.Module):
+        def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
+            super().__init__()
+            self.n_input_channels = n_input_channels
+            self.activation = activation
+            self.n_output_channels = n_output_channels
+            self.layers = nn.ModuleList(
+                [
+                    nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
+                    nn.LayerNorm([32, 31, 31]),
+                    nn.Conv2d(32, 64, 4, stride=2),
+                    nn.LayerNorm([64, 14, 14]),
+                    nn.Conv2d(64, 32, 3, stride=1),
+                    nn.LayerNorm([32, 12, 12]),
+                ]
+            )
+            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
+
+            self.apply(init_chainer_default)
+            self.apply(self.constant_bias_initializer(bias=bias))
+
+        def constant_bias_initializer(self, bias=0.1):
+            def init(m):
+                if isinstance(m, nn.Linear):
+                    nn.init.constant_(m.bias, bias)
+            return init
+
+        def forward(self, state):
+            h = state
+            for layer in self.layers:
+                h = self.activation(layer(h))
+            h_flat = h.view(h.size(0), -1)
+            return self.activation(self.output(h_flat))
+
 class ModifyObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -27,11 +62,11 @@ class ModifyObservationWrapper(gym.ObservationWrapper):
         modified_observation = observation[0].transpose(2, 0, 1)
         # modified_observation = modified_observation/255.0        
         # Normalize the observation
-        return modified_observation
+        return modified_observation.astype(np.uint8)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        obs = obs[0].transpose(2,0,1)
+        obs = obs[0].transpose(2,0,1).astype(np.uint8)
         # obs = obs/255.0
         return obs, info
 
@@ -72,9 +107,42 @@ class DiscreteActions(gym.ActionWrapper):
         # in this case.
         0)
 
+class DistributionalDuelingHead(nn.Module):
+    """Head module for defining a distributional dueling network.
+
+    This module expects a (batch_size, in_size)-shaped `torch.Tensor` as input
+    and returns `pfrl.action_value.DistributionalDiscreteActionValue`.
+
+    Args:
+        in_size (int): Input size.
+        n_actions (int): Number of actions.
+        n_atoms (int): Number of atoms.
+        v_min (float): Minimum value represented by atoms.
+        v_max (float): Maximum value represented by atoms.
+    """
+
+    def __init__(self, in_size, n_actions, n_atoms, v_min, v_max):
+        super().__init__()
+        assert in_size % 2 == 0
+        self.n_actions = n_actions
+        self.n_atoms = n_atoms
+        self.register_buffer(
+            "z_values", torch.linspace(v_min, v_max, n_atoms, dtype=torch.float)
+        )
+        self.a_stream = nn.Linear(in_size // 2, n_actions * n_atoms)
+        self.v_stream = nn.Linear(in_size // 2, n_atoms)
+
+    def forward(self, h):
+        h_a, h_v = torch.chunk(h, 2, dim=1)
+        a_logits = self.a_stream(h_a).reshape((-1, self.n_actions, self.n_atoms))
+        a_logits = a_logits - a_logits.mean(dim=1, keepdim=True)
+        v_logits = self.v_stream(h_v).reshape((-1, 1, self.n_atoms))
+        probs = nn.functional.softmax(a_logits + v_logits, dim=2)
+        return pfrl.action_value.DistributionalDiscreteActionValue(probs, self.z_values)
 
 
 def main():
+    print("Python Version: ", torch.__version__)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--env",
@@ -157,9 +225,7 @@ def main():
         
         env_seed = test_seed if test else train_seed
         env_name = "agario-screen-v0"
-        gamma = 0.99
-        norm_obs = True
-        norm_reward = False
+
         env_config = json.load(open('env_config.json', 'r'))
 
         # env = make_env(env_name, env_config, gamma, norm_obs, norm_reward)
@@ -178,41 +244,24 @@ def main():
     eval_env = make_env_(test=True)
 
     n_actions = env.action_space.n
-    class CustomCNN(nn.Module):
-        def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
-            super().__init__()
-            self.n_input_channels = n_input_channels
-            self.activation = activation
-            self.n_output_channels = n_output_channels
-            self.layers = nn.ModuleList(
-                [
-                    nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
-                    nn.Conv2d(32, 64, 4, stride=2),
-                    nn.Conv2d(64, 32, 3, stride=1),
-                ]
-            )
-            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
-
-            self.apply(init_chainer_default)
-            self.apply(self.constant_bias_initializer(bias=bias))
-
-        def constant_bias_initializer(self, bias=0.1):
-            def init(m):
-                if isinstance(m, nn.Linear):
-                    nn.init.constant_(m.bias, bias)
-            return init
-
-        def forward(self, state):
-            h = state
-            for layer in self.layers:
-                h = self.activation(layer(h))
-            h_flat = h.view(h.size(0), -1)
-            return self.activation(self.output(h_flat))
+    n_atoms = 51
+    v_max = 10
+    v_min = -10
 
     q_func = nn.Sequential(
-        CustomCNN(n_input_channels=4, n_output_channels=128),
-        nn.ReLU(),
-        init_chainer_default(nn.Linear(128, n_actions)),
+        
+        # nn.Conv2d(4, 32, kernel_size=8, stride=4),
+        # nn.LayerNorm([32, 31, 31]),
+        # nn.Conv2d(32, 64, 4, stride=2),
+        # nn.LayerNorm([64, 14, 14]),
+        # nn.Conv2d(64, 32, 3, stride=1),
+        # nn.LayerNorm([32, 12, 12]),
+        # nn.Flatten(),
+        # nn.Linear(4608, 256),
+        # DiscreteActionValueHead(),
+        CustomCNN(n_input_channels=4, n_output_channels=256),
+        # DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
+        nn.Linear(256, n_actions),
         DiscreteActionValueHead(),
     )
     
@@ -229,7 +278,7 @@ def main():
     # )
     opt = torch.optim.Adam(q_func.parameters(), 6.25e-5, eps=1.5 * 10**-4)
 
-    rbuf = replay_buffers.ReplayBuffer(5 * 10**4)
+    rbuf = replay_buffers.ReplayBuffer(100000)#1e5
 
     explorer = explorers.LinearDecayEpsilonGreedy(
         start_epsilon=1.0,

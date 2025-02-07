@@ -15,7 +15,42 @@ from pfrl.q_functions import DistributionalDuelingDQN
 from pfrl.wrappers import atari_wrappers
 from src.wrappers.gym import make_env
 
+from pfrl.initializers import init_chainer_default
+from pfrl.q_functions import DiscreteActionValueHead
+
 # from gym import spaces
+
+class CustomCNN(nn.Module):
+        def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
+            super().__init__()
+            self.n_input_channels = n_input_channels
+            self.activation = activation
+            self.n_output_channels = n_output_channels
+            self.layers = nn.ModuleList(
+                [
+                    nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
+                    nn.Conv2d(32, 64, 4, stride=2),
+                    nn.Conv2d(64, 32, 3, stride=1),
+                ]
+            )
+            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
+
+            self.apply(init_chainer_default)
+            self.apply(self.constant_bias_initializer(bias=bias))
+
+        def constant_bias_initializer(self, bias=0.1):
+            def init(m):
+                if isinstance(m, nn.Linear):
+                    nn.init.constant_(m.bias, bias)
+            return init
+
+        def forward(self, state):
+            h = state
+            for layer in self.layers:
+                h = self.activation(layer(h))
+            h_flat = h.view(h.size(0), -1)
+            return self.activation(self.output(h_flat))
+
 
 class DiscreteActions(gym.ActionWrapper):
     def __init__(self, env):
@@ -217,17 +252,12 @@ def main():
 
     #Two Layers 
     if args.num_layers == 2:
+        n_actions = env.action_space.n
         q_func = nn.Sequential(
-            nn.Conv2d(4, 64, kernel_size=32, stride=1),
-            nn.LayerNorm([64, 97, 97]),  # Add LayerNorm after the first Conv2d layer
+            CustomCNN(n_input_channels=4, n_output_channels=128),
             nn.ReLU(),
-            nn.Conv2d(64, 32, kernel_size=16, stride=4),
-            nn.LayerNorm([32, 21, 21]),  # Add LayerNorm after the second Conv2d layer
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(32 * 21 * 21, 128),  # Adjust the input size according to the output of Conv2d
-            nn.LayerNorm(128),  # Add LayerNorm after the first Linear layer
-            nn.ReLU(),
+            # init_chainer_default(nn.Linear(128, n_actions)),
+            # DiscreteActionValueHead(),
             DistributionalDuelingHead(128, n_actions, n_atoms, v_min, v_max),
         )
     elif args.num_layers == 1: 

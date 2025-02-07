@@ -69,7 +69,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="res",
+        default="PPO_res_1",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -78,7 +78,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default=2 * 10**5,
+        default=10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -118,13 +118,13 @@ def main():
     parser.add_argument(
         "--update-interval",
         type=int,
-        default=300,
+        default=2000,
         help="Interval in timesteps between model updates.",
     )
     parser.add_argument(
         "--epochs",
         type=int,
-        default=15,
+        default=20,
         help="Number of epochs to update model for per PPO iteration.",
     )
 
@@ -165,9 +165,8 @@ def main():
         env_config = json.load(open('env_config.json', 'r'))
         env = gym.make(args.env, **env_config)
         # Use different random seeds for train and test envs
-        process_seed = int(process_seeds[process_idx])
         # env_seed = (2**32 - 1 - process_seed if test else process_seed) % (2**32)
-        env.seed(42)
+        env.seed(args.seed)
         env = MultiActionWrapper(env)
         env = ObservationWrapper(env)
         env = gym.wrappers.ClipAction(env)
@@ -213,8 +212,11 @@ def main():
             self.layers = nn.ModuleList(
                 [
                     nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
+                    nn.LayerNorm([32, 31, 31]),
                     nn.Conv2d(32, 64, 4, stride=2),
+                    nn.LayerNorm([64, 14, 14]),
                     nn.Conv2d(64, 32, 3, stride=1),
+                    nn.LayerNorm([32, 12, 12]),
                 ]
             )
             self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
