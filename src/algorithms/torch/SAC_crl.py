@@ -23,18 +23,28 @@ from torch.utils.tensorboard import SummaryWriter
 
 from cleanrl.cleanrl.sac_continuous_action import Args
 
+
+class MultiActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+    def action(self, action):
+        return (action, 0)  # no-op on the second action
+
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
-        # Modify observation space if needed
-        print( self.observation_space.shape )
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
+
     def observation(self, observation):
-        return observation.transpose(0, 3, 1, 2)
+        normalized = (observation - np.mean(observation) )/ np.std(observation)
+        return normalized.transpose(0, 3, 1, 2)
+
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         return obs.transpose(0, 3, 1, 2), info
-
+    
 def eval_agent(env, actor, save_path="agent_playing.mp4", eval_steps=500):
     obs, _ = env.reset()
     cumulative_reward = 0
@@ -154,8 +164,8 @@ def make_env(env_id, seed, idx, capture_video, run_name, **kwargs):
                 # env = FlattenObservation(env)
                 # env = gym.wrappers.RecordEpisodeStatistics(env)
                 env = gym.wrappers.RecordEpisodeStatistics(env)
-                env = gym.wrappers.NormalizeObservation(env)
-                env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+                # env = gym.wrappers.NormalizeObservation(env)
+                # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
                 env = MultiActionWrapper(env)
                 # env = FlattenActionWrapper(env)
                 env = ObservationWrapper(env)
