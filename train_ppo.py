@@ -18,13 +18,13 @@ from pfrl import nn as pnn
 from pfrl import replay_buffers, utils
 from pfrl.q_functions import DistributionalDuelingDQN
 from pfrl.wrappers import atari_wrappers
-from src.wrappers.gym import make_env
+# from src.wrappers.gym import make_env
 from pfrl.initializers import init_chainer_default
 
 from pfrl.agents import PPO
 # from gym import spaces
-
 import functools
+import gym_agario
 
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
@@ -65,11 +65,11 @@ def main():
     parser.add_argument(
         "--num-envs", type=int, default=1, help="Number of envs run in parallel."
     )
-    parser.add_argument("--seed", type=int, default=0, help="Random seed [0, 2 ** 32)")
+    parser.add_argument("--seed", type=int, default=10, help="Random seed [0, 2 ** 32)")
     parser.add_argument(
         "--outdir",
         type=str,
-        default="PPO_res_1",
+        default="PPO_res_1_1",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -78,7 +78,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default=10**6,
+        default= 2 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -112,19 +112,19 @@ def main():
     parser.add_argument(
         "--log-interval",
         type=int,
-        default=1000,
+        default=5000,
         help="Interval in timesteps between outputting log messages during training",
     )
     parser.add_argument(
         "--update-interval",
         type=int,
-        default=2000,
+        default=5000,
         help="Interval in timesteps between model updates.",
     )
     parser.add_argument(
         "--epochs",
         type=int,
-        default=20,
+        default=10,
         help="Number of epochs to update model for per PPO iteration.",
     )
 
@@ -132,20 +132,22 @@ def main():
         "--clip-eps", type=float, default=0.4, help="Clipping parameter for PPO.")
 
     parser.add_argument(
-        "--entropy-coef", type=float, default=0.01, help="Entropy coefficient for PPO.")
+        "--entropy-coef", type=float, default=0.001, help="Entropy coefficient for PPO.")
 
     parser.add_argument(
-        "--clip-eps-vf", type=float, default=0.001, help="Clipping parameter for the value function.")
+        "--clip-eps-vf", type=float, default=0.2, help="Clipping parameter for the value function.")
 
     parser.add_argument(
-        "--value-func-coef", type=float, default=0.4, help="Value function coefficient for PPO.")
+        "--value-func-coef", type=float, default=0.7, help="Value function coefficient for PPO.")
 
     parser.add_argument(
-        "--max-grad-norm", type=float, default=0.5, help="Maximum norm of gradients.")
+        "--max-grad-norm", type=float, default=0.9, help="Maximum norm of gradients.")
+
+    parser.add_argument(
+        "--lr", type=float, default=1e-5, help="The learning rate of the optimizer.")
 
 
-
-    parser.add_argument("--batch-size", type=int, default=32, help="Minibatch size")
+    parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
@@ -164,6 +166,7 @@ def main():
     def make_env(process_idx, test):
         env_config = json.load(open('env_config.json', 'r'))
         env = gym.make(args.env, **env_config)
+        gamma  = 0.99
         # Use different random seeds for train and test envs
         # env_seed = (2**32 - 1 - process_seed if test else process_seed) % (2**32)
         env.seed(args.seed)
@@ -173,6 +176,9 @@ def main():
         # env = gym.wrappers.flatten_observation.FlattenObservation(env)
         # Cast observations to float32 because our model uses float32
         env = pfrl.wrappers.CastObservationToFloat32(env)
+        #Scaling Rewards
+        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+        # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, 0, 1))
         # if args.monitor:
         #     env = pfrl.wrappers.Monitor(env, args.outdir)
         # if args.render:
@@ -245,9 +251,9 @@ def main():
     # action_size = action_space.low.size
     action_size = 2
     policy = nn.Sequential(
-        CustomCNN(n_input_channels=4, n_output_channels=128),
+        CustomCNN(n_input_channels=4, n_output_channels=256),
         nn.ReLU(),
-        init_chainer_default(nn.Linear(128, 2)),
+        init_chainer_default(nn.Linear(256, 2)),
         pfrl.policies.GaussianHeadWithStateIndependentCovariance(
                 action_size=action_size,
                 var_type="diagonal",
@@ -257,9 +263,9 @@ def main():
     )
 
     vf = torch.nn.Sequential(
-        CustomCNN(n_input_channels=4, n_output_channels=128),
+        CustomCNN(n_input_channels=4, n_output_channels=256),
         nn.ReLU(),
-        init_chainer_default(nn.Linear(128, 1)),
+        init_chainer_default(nn.Linear(256, 1)),
     )
 
     # While the original paper initialized weights by normal distribution,
@@ -278,7 +284,7 @@ def main():
     # Combine a policy and a value function into a single model
     model = pfrl.nn.Branched(policy, vf)
 
-    opt = torch.optim.Adam(model.parameters(), lr=3e-4, eps=1e-5)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-4)
 
     agent = PPO(
         model,

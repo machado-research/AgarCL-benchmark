@@ -1,4 +1,6 @@
 # ignore all results folders
+/DQN_results*/
+/PPO*/
 results/
 results-*/
 plots/

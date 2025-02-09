@@ -25,14 +25,14 @@ class CustomCNN(nn.Module):
             self.layers = nn.ModuleList(
                 [
                     nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
-                    nn.LayerNorm([32, 31, 31]),
+                    nn.LayerNorm([32, 29, 29]),
                     nn.Conv2d(32, 64, 4, stride=2),
-                    nn.LayerNorm([64, 14, 14]),
+                    nn.LayerNorm([64, 13, 13]),
                     nn.Conv2d(64, 32, 3, stride=1),
-                    nn.LayerNorm([32, 12, 12]),
+                    nn.LayerNorm([32, 11, 11]),
                 ]
             )
-            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
+            self.output = nn.Linear(32 * 11 * 11, n_output_channels)  # Adjusted for 3x84x84 input
 
             self.apply(init_chainer_default)
             self.apply(self.constant_bias_initializer(bias=bias))
@@ -153,7 +153,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="results",
+        default="DQN_results_Exp1_2",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -192,7 +192,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 10**6,
+        default= 2 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -249,20 +249,11 @@ def main():
     v_min = -10
 
     q_func = nn.Sequential(
-        
-        # nn.Conv2d(4, 32, kernel_size=8, stride=4),
-        # nn.LayerNorm([32, 31, 31]),
-        # nn.Conv2d(32, 64, 4, stride=2),
-        # nn.LayerNorm([64, 14, 14]),
-        # nn.Conv2d(64, 32, 3, stride=1),
-        # nn.LayerNorm([32, 12, 12]),
-        # nn.Flatten(),
-        # nn.Linear(4608, 256),
-        # DiscreteActionValueHead(),
         CustomCNN(n_input_channels=4, n_output_channels=256),
-        # DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
+        nn.ReLU(),
         nn.Linear(256, n_actions),
         DiscreteActionValueHead(),
+        # DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
     )
     
 
@@ -342,6 +333,7 @@ def main():
             outdir=args.outdir,
             save_best_so_far_agent=True,
             eval_env=eval_env,
+            checkpoint_freq = 100000,
         )
 
         dir_of_best_network = os.path.join(args.outdir, "best")
