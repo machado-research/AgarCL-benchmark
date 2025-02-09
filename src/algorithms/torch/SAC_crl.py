@@ -3,10 +3,11 @@ import random
 import cv2
 import cv2
 import time
-import modules.agar.gym_agario 
+# import modules.agar.gym_agario 
 from dataclasses import dataclass
 
 import gymnasium as gym
+from gym.spaces import flatten_space, flatten, unflatten
 import numpy as np
 import torch
 import torch.nn as nn
@@ -20,18 +21,8 @@ from src.wrappers.gym import SB3Wrapper, ModifyActionWrapperCRL, FlattenObservat
 from torch.utils.tensorboard import SummaryWriter
 #from src.wrappers.gym import make_env
 
-from cleanrl.cleanrl.sac_continuous_action import Actor, Args, SoftQNetwork
+from cleanrl.cleanrl.sac_continuous_action import Args
 
-class MultiActionWrapper(gym.ActionWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        # self.action_space = gym.spaces.Tuple((
-        #     gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
-        #     gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
-        # ))
-        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
-    def action(self, action):
-        return (action, 0)  # no-op on the second action
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -86,19 +77,16 @@ def eval_agent(env, actor, save_path="agent_playing.mp4", eval_steps=500):
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
-        # self.action_space = gym.spaces.Tuple((
-        #     gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
-        #     gym.spaces.Discrete(3),                      # 0=noop, 1=split, 2=feed
-        # ))
-        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,))  # (dx, dy) movement vector
+        self.single_action_space = self.action_space
     def action(self, action):
-        return (action, 0)  # no-op on the second action
+        return (action,0)  # no-op on the second action
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
         # Modify observation space if needed
-        print( self.observation_space.shape )
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
+        self.single_observation_space = self.observation_space
     def observation(self, observation):
         return observation.transpose(0, 3, 1, 2)
     def reset(self, **kwargs):
@@ -161,55 +149,136 @@ def make_env(env_id, seed, idx, capture_video, run_name, **kwargs):
         else:
             if ( env_id == "agario-screen-v0" ):
                 env = gym.make(env_id, **kwargs)
-                env = SB3Wrapper(env)
-                env = ModifyActionWrapperCRL(env)
-                env = FlattenObservation(env)
-                env = gym.wrappers.RecordEpisodeStatistics(env)
-
-                # 
+                # env = SB3Wrapper(env)
+                # env = ModifyActionWrapperCRL(env)
+                # env = FlattenObservation(env)
                 # env = gym.wrappers.RecordEpisodeStatistics(env)
-                # env = gym.wrappers.NormalizeObservation(env)
-                # env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
-                # env = MultiActionWrapper(env)
-                # env = ObservationWrapper(env)
+                env = gym.wrappers.RecordEpisodeStatistics(env)
+                env = gym.wrappers.NormalizeObservation(env)
+                env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
+                env = MultiActionWrapper(env)
+                # env = FlattenActionWrapper(env)
+                env = ObservationWrapper(env)
             else:
                 env = gym.make(env_id, render_mode='rgb_array')
 
-        env.action_space.seed(seed)
+        # env.action_space.seed(seed)
   
         obs = env.reset()
-        print(f"Reset output: {obs}")  # Debugging
+        # print(f"Reset output: {obs}")  # Debugging
         return env
 
-    return thunk
+    return thunk()
+
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
 
 
+LOG_STD_MAX = 2
+LOG_STD_MIN = -5
 
-class AgarIOActor( Actor ):
+
+class SoftQNetwork(nn.Module):
     def __init__(self, env):
-        super().__init__(env)
-    
-    # Need to override this
-    def get_action(self, x):
-        action, log_prob, mean_action = super().get_action(x)
-             # Ensure that print_limit does not exceed the batch size
-        batch_size = action[0].shape[0]  # Assuming action is a tuple (cont_action, dis_action)
-    
-        # Overwrite the discrete action (last dimension) to always map to index 0
-        # Assuming that setting it to the lower bound maps to discrete action 0
-        # For example, if action_space.low[-1] = -1.0, set to -1.0
-        # print( action[0] )
-        return action, log_prob, mean_action
-        action, log_prob, mean_action = super().get_action(x)
-             # Ensure that print_limit does not exceed the batch size
-        batch_size = action[0].shape[0]  # Assuming action is a tuple (cont_action, dis_action)
-    
-        # Overwrite the discrete action (last dimension) to always map to index 0
-        # Assuming that setting it to the lower bound maps to discrete action 0
-        # For example, if action_space.low[-1] = -1.0, set to -1.0
-        # print( action[0] )
-        return action, log_prob, mean_action
+        super().__init__()
+        self.conv = nn.Sequential(
+            layer_init(nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1)),
+            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
+            nn.ReLU(),
+            layer_init(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1)),
+            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the second Conv2d layer
+            nn.ReLU(),
+            nn.Flatten(),
+            layer_init(nn.Linear(64 * 106* 106, 256)),
+            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
+            nn.ReLU(),
+            layer_init(nn.Linear(256, 1), std=1.0),
+        )
 
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, *env.single_observation_space.shape)
+            conv_out = self.conv(dummy_input)
+
+        conv_out_size = conv_out.shape[1]
+        
+        box = env.action_space
+        box_dim = int(np.prod(box.shape))
+
+        # For the Discrete space:
+        # discrete = env.action_space.spaces[1]
+        # discrete_dim = discrete.n 
+
+        total_action_dim = box_dim  #+ discrete_dim
+        
+        # Fully connected part: takes concatenated conv features and action vector.
+        self.fc = nn.Sequential(
+            layer_init(nn.Linear(conv_out_size + total_action_dim, 256)),
+            nn.ReLU(),
+            layer_init(nn.Linear(256, 256)),
+            nn.ReLU(),
+            layer_init(nn.Linear(256, 1), std=1.0)
+        )
+
+    def forward(self, x, a):
+        #Assumes discrete aciton is converted to one-hot encoding
+        x = self.conv(x)
+        # Concatenate the flattened features with the action vector
+        x = torch.cat([x, a], dim=1)
+        q_value = self.fc(x)
+        return q_value
+
+class Actor(nn.Module):
+    def __init__(self, env):
+        super().__init__()
+   
+        self.actor_mean = nn.Sequential(
+            nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
+            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
+            nn.ReLU(),
+            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),  # Additional Conv2d layer
+            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the additional Conv2d layer
+            nn.ReLU(),
+            nn.Flatten(),
+            layer_init(nn.Linear(64 * 106* 106, 256)),
+            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
+            nn.ReLU(),
+            layer_init(nn.Linear(256, 2)) # 2 continuous actions
+        )
+        
+        self.fc_logstd = nn.Parameter(torch.zeros(1,2))
+
+        # action rescaling
+        # self.register_buffer(
+        #     "action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0, dtype=torch.float32)
+        # )
+        # self.register_buffer(
+        #     "action_bias", torch.tensor((env.action_space.high + env.action_space.low) / 2.0, dtype=torch.float32)
+        # )
+
+    def forward(self, x):
+        mean = self.actor_mean(x)
+        log_std = self.fc_logstd.expand_as(mean)
+        log_std = torch.tanh(log_std)
+        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (log_std + 1)  # From SpinUp / Denis Yarats
+
+        return mean, log_std
+
+    def get_action(self, x):
+        mean, log_std = self(x)
+        std = log_std.exp()
+        normal = torch.distributions.Normal(mean, std)
+        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
+        y_t = torch.tanh(x_t)
+        action = y_t * self.action_scale + self.action_bias
+        # action[:, 2] = 0.0
+        log_prob = normal.log_prob(x_t)
+        # Enforcing Action Bound
+        log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
+        log_prob = log_prob.sum(1, keepdim=True)
+        mean = torch.tanh(mean) * self.action_scale + self.action_bias
+        return action, log_prob, mean
 
 
 if __name__ == "__main__":
@@ -259,14 +328,14 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     import json
     env_config = json.load(open('env_config.json', 'r'))
 
-    envs = gym.vector.AsyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)])
+    envs = make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)
 
-    assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
+    # assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    max_action = float(envs.single_action_space.high[0])
+    # max_action = float(envs.single_action_space.high[0])
 
-    actor = AgarIOActor(envs).to(device)
-    actor = AgarIOActor(envs).to(device)
+    actor = Actor(envs).to(device)
+    actor = Actor(envs).to(device)
     qf1 = SoftQNetwork(envs).to(device)
     qf2 = SoftQNetwork(envs).to(device)
     qf1_target = SoftQNetwork(envs).to(device)
@@ -278,7 +347,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     # Automatic entropy tuning
     if args.autotune:
-        target_entropy = -torch.prod(torch.Tensor(envs.single_action_space.shape).to(device)).item()
+        target_entropy = -torch.prod(torch.Tensor(envs.action_space.shape).to(device)).item()
         log_alpha = torch.zeros(1, requires_grad=True, device=device)
         alpha = log_alpha.exp().item()
         a_optimizer = optim.Adam([log_alpha], lr=args.q_lr)
