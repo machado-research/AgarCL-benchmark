@@ -19,16 +19,53 @@ from stable_baselines3.common.buffers import ReplayBuffer
 from src.wrappers.gym import SB3Wrapper, ModifyActionWrapperCRL, FlattenObservationWrapper, FlattenObservation
 from src.wrappers.gym import SB3Wrapper, ModifyActionWrapperCRL, FlattenObservationWrapper, FlattenObservation
 from torch.utils.tensorboard import SummaryWriter
+from pfrl.initializers import init_chainer_default
+
 #from src.wrappers.gym import make_env
 
 from cleanrl.cleanrl.sac_continuous_action import Args
 
+class CustomCNN(nn.Module):
+        def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
+            super().__init__()
+            self.n_input_channels = n_input_channels
+            self.activation = activation
+            self.n_output_channels = n_output_channels
+            self.layers = nn.ModuleList(
+                [
+                    nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
+                    nn.LayerNorm([32, 31, 31]),
+                    nn.Conv2d(32, 64, 4, stride=2),
+                    nn.LayerNorm([64, 14, 14]),
+                    nn.Conv2d(64, 32, 3, stride=1),
+                    nn.LayerNorm([32, 12, 12]),
+                ]
+            )
+            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
 
+            self.apply(init_chainer_default)
+            self.apply(self.constant_bias_initializer(bias=bias))
+
+        def constant_bias_initializer(self, bias=0.1):
+            def init(m):
+                if isinstance(m, nn.Linear):
+                    nn.init.constant_(m.bias, bias)
+            return init
+
+        def forward(self, state):
+            h = state
+            for layer in self.layers:
+                h = self.activation(layer(h))
+            h_flat = h.view(h.size(0), -1)
+            return self.activation(self.output(h_flat))
+        
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
 
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,)),  # (dx, dy) movement vector
+    
+
     def action(self, action):
         return (action, 0)  # no-op on the second action
 
@@ -90,6 +127,12 @@ class MultiActionWrapper(gym.ActionWrapper):
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,))  # (dx, dy) movement vector
         self.single_action_space = self.action_space
     def action(self, action):
+        action = np.array(action)
+        # Remove extra dimensions. For example, converting shape (1,2) to (2,).
+        action = np.squeeze(action)
+        dx, dy = float(action[0]), float(action[1])
+        # Return the action in the correct tuple format.
+        return ((dx, dy), 0)
         return (action,0)  # no-op on the second action
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
@@ -193,18 +236,26 @@ LOG_STD_MIN = -5
 class SoftQNetwork(nn.Module):
     def __init__(self, env):
         super().__init__()
+
+
+        # self.conv = nn.Sequential(
+        #     layer_init(nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1)),
+        #     nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
+        #     nn.ReLU(),
+        #     layer_init(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1)),
+        #     nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the second Conv2d layer
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     layer_init(nn.Linear(64 * 106* 106, 256)),
+        #     nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
+        #     nn.ReLU(),
+        #     layer_init(nn.Linear(256, 1), std=1.0),
+        # )
+
         self.conv = nn.Sequential(
-            layer_init(nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1)),
-            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
-            nn.ReLU(),
-            layer_init(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1)),
-            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the second Conv2d layer
-            nn.ReLU(),
-            nn.Flatten(),
-            layer_init(nn.Linear(64 * 106* 106, 256)),
-            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
-            nn.ReLU(),
-            layer_init(nn.Linear(256, 1), std=1.0),
+        CustomCNN(n_input_channels=4, n_output_channels=128),
+        nn.ReLU(),
+        layer_init(nn.Linear(128, 1), std=1.0),
         )
 
         with torch.no_grad():
@@ -243,29 +294,35 @@ class Actor(nn.Module):
     def __init__(self, env):
         super().__init__()
    
+        # self.actor_mean = nn.Sequential(
+        #     nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
+        #     nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
+        #     nn.ReLU(),
+        #     nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),  # Additional Conv2d layer
+        #     nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the additional Conv2d layer
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     layer_init(nn.Linear(64 * 106* 106, 256)),
+        #     nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
+        #     nn.ReLU(),
+        #     layer_init(nn.Linear(256, 2)) # 2 continuous actions
+        # )
+
         self.actor_mean = nn.Sequential(
-            nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
-            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
+            CustomCNN(n_input_channels=4, n_output_channels=128),
             nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),  # Additional Conv2d layer
-            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the additional Conv2d layer
-            nn.ReLU(),
-            nn.Flatten(),
-            layer_init(nn.Linear(64 * 106* 106, 256)),
-            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
-            nn.ReLU(),
-            layer_init(nn.Linear(256, 2)) # 2 continuous actions
+            layer_init(nn.Linear(128, 2), std=0.01),
         )
         
         self.fc_logstd = nn.Parameter(torch.zeros(1,2))
 
         # action rescaling
-        # self.register_buffer(
-        #     "action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0, dtype=torch.float32)
-        # )
-        # self.register_buffer(
-        #     "action_bias", torch.tensor((env.action_space.high + env.action_space.low) / 2.0, dtype=torch.float32)
-        # )
+        self.register_buffer(
+            "action_scale", torch.tensor([1.0, 1.0], dtype=torch.float32)
+        )
+        self.register_buffer(
+            "action_bias", torch.tensor([0.0, 0.0], dtype=torch.float32)
+        )
 
     def forward(self, x):
         mean = self.actor_mean(x)
@@ -288,6 +345,7 @@ class Actor(nn.Module):
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
         log_prob = log_prob.sum(1, keepdim=True)
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
+        # print( "action shape", action.shape )
         return action, log_prob, mean
 
 
@@ -338,13 +396,13 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     import json
     env_config = json.load(open('env_config.json', 'r'))
 
-    envs = make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)
+    envs = [ make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config) for i in range( 1 ) ]
+    envs = envs[0]
 
     # assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
     # max_action = float(envs.single_action_space.high[0])
 
-    actor = Actor(envs).to(device)
     actor = Actor(envs).to(device)
     qf1 = SoftQNetwork(envs).to(device)
     qf2 = SoftQNetwork(envs).to(device)
@@ -374,24 +432,20 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     )
     start_time = time.time()
 
-    # eval_env = make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)()
-
-    # # Evaluate and save the agent's gameplay video
-    # eval_agent(eval_env, actor, save_path="agario_agent.mp4")
-
-    # eval_env = make_env(args.env_id, args.seed, 0, args.capture_video, run_name, **env_config)()
-
-    # # Evaluate and save the agent's gameplay video
-    # eval_agent(eval_env, actor, save_path="agario_agent.mp4")
-
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)
     for global_step in range(args.total_timesteps):
         # ALGO LOGIC: put action logic here
         if global_step < args.learning_starts:
-            actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
+            # actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
+            actions = envs.single_action_space.sample()
+            # print( actions )
+            
+            # actions = actions.detach().cpu().numpy()
         else:
-            actions, _, _ = actor.get_action(torch.Tensor(obs).to(device))
+            obs_tensor = torch.Tensor(obs).to(device)
+            actions, _, _ = actor.get_action(obs_tensor)
+            # print('Action received')
             actions = actions.detach().cpu().numpy()
 
         # TRY NOT TO MODIFY: execute the game and log data.
@@ -406,14 +460,26 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 break
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
-        real_next_obs = next_obs.copy()
-        for idx, trunc in enumerate(truncations):
-            if trunc:
-                real_next_obs[idx] = infos["final_observation"][idx]
+        next_done = np.logical_or(terminations, truncations).astype(np.float32)
+
+        if(next_done == True):
+            # with open(f"runs/{run_name}/episodic_rewards.csv", "a") as f:
+                # f.write(f"{global_step},{episodic_reward}\n")
+            episodic_reward = 0
+            next_obs, _ = envs.reset()
+            next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
+        # for idx, trunc in enumerate(truncations):
+        #     if trunc:
+        #         real_next_obs[idx] = infos["final_observation"][idx]
+
+        real_next_obs = next_obs
         rb.add(obs, real_next_obs, actions, rewards, terminations, infos)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
         obs = next_obs
+
+        # print( "Global step", global_step )
+        # print( "Learning starts", args.learning_starts )
 
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
@@ -466,8 +532,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
                 for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
                     target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-
-            if global_step % 100 == 0:
+            # print( "sps", int(global_step / (time.time() - start_time)) )
+            if global_step % 20 == 0:
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf2_values", qf2_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
@@ -475,10 +541,18 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 writer.add_scalar("losses/qf_loss", qf_loss.item() / 2.0, global_step)
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
                 writer.add_scalar("losses/alpha", alpha, global_step)
+                print( "global_step", global_step )
                 print("SPS:", int(global_step / (time.time() - start_time)))
-                writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
-                if args.autotune:
-                    writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
+                print("Q1 Loss:", qf1_loss.item())
+                print("Q2 Loss:", qf2_loss.item())
+                print("Actor Loss:", actor_loss.item())
+                print("Alpha:", alpha)
+                print("Q1 Values:", qf1_a_values.mean().item())
+                print("Q2 Values:", qf2_a_values.mean().item())
+                print("Q Loss:", qf_loss.item() / 2.0)
+                # writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+                # if args.autotune:
+                #     writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
 
     envs.close()
     writer.close()
