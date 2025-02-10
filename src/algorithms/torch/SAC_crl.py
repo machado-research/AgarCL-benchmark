@@ -371,7 +371,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         wandb.init(
             project=args.wandb_project_name,
             entity=args.wandb_entity,
-            sync_tensorboard=True,
+            # sync_tensorboard=True,
             config=vars(args),
             name=run_name,
             monitor_gym=True,
@@ -431,7 +431,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         handle_timeout_termination=False,
     )
     start_time = time.time()
-
+    episodic_reward = 0;
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)
     for global_step in range(args.total_timesteps):
@@ -462,12 +462,16 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
         next_done = np.logical_or(terminations, truncations).astype(np.float32)
 
+        episodic_reward += rewards
+
         if(next_done == True):
             # with open(f"runs/{run_name}/episodic_rewards.csv", "a") as f:
                 # f.write(f"{global_step},{episodic_reward}\n")
             episodic_reward = 0
             next_obs, _ = envs.reset()
             next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
+            wandb.log({"episodic_reward": episodic_reward, "global_step": global_step})
+
         # for idx, trunc in enumerate(truncations):
         #     if trunc:
         #         real_next_obs[idx] = infos["final_observation"][idx]
@@ -541,15 +545,28 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 writer.add_scalar("losses/qf_loss", qf_loss.item() / 2.0, global_step)
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
                 writer.add_scalar("losses/alpha", alpha, global_step)
-                print( "global_step", global_step )
-                print("SPS:", int(global_step / (time.time() - start_time)))
-                print("Q1 Loss:", qf1_loss.item())
-                print("Q2 Loss:", qf2_loss.item())
-                print("Actor Loss:", actor_loss.item())
-                print("Alpha:", alpha)
-                print("Q1 Values:", qf1_a_values.mean().item())
-                print("Q2 Values:", qf2_a_values.mean().item())
-                print("Q Loss:", qf_loss.item() / 2.0)
+
+                wandb.log(
+                    {
+                        "losses/qf1_values": qf1_a_values.mean().item(),
+                        "losses/qf2_values": qf2_a_values.mean().item(),
+                        "losses/qf1_loss": qf1_loss.item(),
+                        "losses/qf2_loss": qf2_loss.item(),
+                        "losses/qf_loss": qf_loss.item() / 2.0,
+                        "losses/actor_loss": actor_loss.item(),
+                        "losses/alpha": alpha,
+                    }
+                )
+
+                # print( "global_step", global_step )
+                # print("SPS:", int(global_step / (time.time() - start_time)))
+                # print("Q1 Loss:", qf1_loss.item())
+                # print("Q2 Loss:", qf2_loss.item())
+                # print("Actor Loss:", actor_loss.item())
+                # print("Alpha:", alpha)
+                # print("Q1 Values:", qf1_a_values.mean().item())
+                # print("Q2 Values:", qf2_a_values.mean().item())
+                # print("Q Loss:", qf_loss.item() / 2.0)
                 # writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
                 # if args.autotune:
                 #     writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
