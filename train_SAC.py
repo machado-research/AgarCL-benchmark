@@ -9,8 +9,7 @@ import logging
 import sys
 from distutils.version import LooseVersion
 
-import gym
-import gym.wrappers
+import gymnasium as gym
 import numpy as np
 import torch
 from torch import distributions, nn
@@ -20,8 +19,10 @@ from pfrl import experiments, replay_buffers, utils
 from pfrl.nn.lmbda import Lambda
 from pfrl.initializers import init_chainer_default
 
-import os
 import gym_agario
+import os
+import json
+import os
 
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
@@ -59,8 +60,8 @@ def main():
     parser.add_argument(
         "--env",
         type=str,
-        default="Hopper-v2",
-        help="OpenAI Gym MuJoCo env to perform algorithm on.",
+        default="agario-screen-v0",
+        help="AgarIO",
     )
     parser.add_argument(
         "--num-envs", type=int, default=1, help="Number of envs run in parallel."
@@ -87,7 +88,7 @@ def main():
     parser.add_argument(
         "--eval-interval",
         type=int,
-        default=5000,
+        default=50000,
         help="Interval in timesteps between evaluations.",
     )
     parser.add_argument(
@@ -96,7 +97,7 @@ def main():
         default=10000,
         help="Minimum replay buffer size before " + "performing gradient updates.",
     )
-    parser.add_argument("--batch-size", type=int, default=256, help="Minibatch size")
+    parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
     parser.add_argument(
         "--render", action="store_true", help="Render env states in a GUI window."
     )
@@ -113,7 +114,7 @@ def main():
     parser.add_argument(
         "--log-interval",
         type=int,
-        default=1000,
+        default=500,
         help="Interval in timesteps between outputting log messages during training",
     )
     parser.add_argument(
@@ -134,15 +135,10 @@ def main():
 
     # Set a random seed used in PFRL
     utils.set_random_seed(args.seed)
-
-    # Set different random seeds for different subprocesses.
-    # If seed=0 and processes=4, subprocess seeds are [0, 1, 2, 3].
-    # If seed=1 and processes=4, subprocess seeds are [4, 5, 6, 7].
-    process_seeds = np.arange(args.num_envs) + args.seed * args.num_envs
-    assert process_seeds.max() < 2**32
-
+    env_config = json.load(open('env_config.json', 'r'))
     def make_env(process_idx, test):
-        env_config = json.load(open('env_config.json', 'r'))
+
+        
         env = gym.make(args.env, **env_config)
         gamma  = 0.99
         # Use different random seeds for train and test envs
@@ -179,9 +175,8 @@ def main():
     print("Observation space:", obs_space)
     print("Action space:", action_space)
 
-    obs_size = obs_space.low.size
+    obs_size = 4
     action_size = action_space.low.size
-
     if LooseVersion(torch.__version__) < LooseVersion("1.5.0"):
         raise Exception("This script requires a PyTorch version >= 1.5.0")
 
@@ -240,17 +235,41 @@ def main():
     )
     # torch.nn.init.xavier_uniform_(policy[0].weight)
     # torch.nn.init.xavier_uniform_(policy[2].weight)
-    torch.nn.init.xavier_uniform_(policy[10].weight, gain=args.policy_output_scale)
+    torch.nn.init.xavier_uniform_(policy[2].weight, gain=args.policy_output_scale)
     policy_optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
 
-    def make_q_func_with_optimizer():
-        q_func = nn.Sequential(
-            pfrl.nn.ConcatObsAndAction(),
-            CustomCNN(n_input_channels=obs_size + action_size, n_output_channels=256),
-            nn.ReLU(),
-            init_chainer_default(nn.Linear(256, 1)),
-        )
+    class SoftQNetwork(nn.Module):
+        def __init__(self, image_channels, action_dim, feature_dim=64):
+            super(SoftQNetwork, self).__init__()
+            # Convolutional layers for image encoding
+            self.conv = nn.Sequential(
+                CustomCNN(n_input_channels=image_channels, n_output_channels=256),
+                nn.ReLU(),
+            )
+            conv_output_size = 256
+            
+            # Fully connected layers that combine the flattened conv features and action
+            self.fc1 = init_chainer_default(nn.Linear(conv_output_size + action_dim, feature_dim))
+            self.fc2 = init_chainer_default(nn.Linear(feature_dim, 1))  # Output a single Q-value
 
+        def forward(self, state_action):
+            """
+            state: Tensor of shape [batch, channels, height, width]
+            action: Tensor of shape [batch, action_dim]
+            """
+            assert len(state_action) == 2
+            state,action = state_action
+            conv_out = self.conv(state)
+            conv_out = conv_out.view(conv_out.size(0), -1)
+            x = torch.cat([conv_out, action], dim=-1)  # [batch, conv_features + action_dim]
+            x = self.fc1(x)
+            x = nn.ReLU()(x)
+            q_value = self.fc2(x)  # [batch, 1]
+            return q_value
+
+    def make_q_func_with_optimizer():
+        q_func = SoftQNetwork(image_channels=obs_size, action_dim=action_size)
+        
         q_func_optimizer = torch.optim.Adam(q_func.parameters(), lr=3e-4)
         return q_func, q_func_optimizer
 
@@ -263,6 +282,9 @@ def main():
         """Select random actions until model is updated one or more times."""
         return np.random.uniform(action_space.low, action_space.high).astype(np.float32)
 
+    def phi(x):
+        # Feature extractor
+        return np.asarray(x, dtype=np.float32) / 255
     # Hyperparameters in http://arxiv.org/abs/1802.09477
     agent = pfrl.agents.SoftActorCritic(
         policy,
@@ -273,6 +295,7 @@ def main():
         q_func2_optimizer,
         rbuf,
         gamma=0.99,
+        phi=phi,
         replay_start_size=args.replay_start_size,
         gpu=args.gpu,
         minibatch_size=args.batch_size,
@@ -309,23 +332,37 @@ def main():
                 eval_stats["stdev"],
             )
         )
-        import json
-        import os
 
         with open(os.path.join(args.outdir, "demo_scores.json"), "w") as f:
             json.dump(eval_stats, f)
     else:
-        experiments.train_agent_batch_with_evaluation(
+        # experiments.train_agent_batch_with_evaluation(
+        #     agent=agent,
+        #     env=make_batch_env(test=False),
+        #     eval_env=make_batch_env(test=True),
+        #     outdir=args.outdir,
+        #     steps=args.steps,
+        #     eval_n_steps=None,
+        #     eval_n_episodes=args.eval_n_runs,
+        #     eval_interval=args.eval_interval,
+        #     log_interval=args.log_interval,
+        #     max_episode_len=timestep_limit,
+        # )
+        
+        experiments.train_agent_with_evaluation(
             agent=agent,
-            env=make_batch_env(test=False),
-            eval_env=make_batch_env(test=True),
-            outdir=args.outdir,
+            env=make_batch_env(False),
+            eval_env=make_batch_env(True),
             steps=args.steps,
             eval_n_steps=None,
             eval_n_episodes=args.eval_n_runs,
             eval_interval=args.eval_interval,
-            log_interval=args.log_interval,
-            max_episode_len=timestep_limit,
+            outdir=args.outdir,
+            save_best_so_far_agent=True,
+            checkpoint_freq = 100000,
+            # log_interval=args.log_interval,
+             train_max_episode_len=timestep_limit,
+             eval_max_episode_len=timestep_limit,
         )
 
 

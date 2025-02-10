@@ -25,11 +25,11 @@ class CustomCNN(nn.Module):
             self.layers = nn.ModuleList(
                 [
                     nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
-                    nn.LayerNorm([32, 29, 29]),
+                    nn.LayerNorm([32, 31, 31]),
                     nn.Conv2d(32, 64, 4, stride=2),
-                    nn.LayerNorm([64, 13, 13]),
+                    nn.LayerNorm([64, 14, 14]),
                     nn.Conv2d(64, 32, 3, stride=1),
-                    nn.LayerNorm([32, 11, 11]),
+                    nn.LayerNorm([32, 12, 12]),
                 ]
             )
             self.output = nn.Linear(32 * 11 * 11, n_output_channels)  # Adjusted for 3x84x84 input
