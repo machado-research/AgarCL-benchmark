@@ -364,6 +364,7 @@ if __name__ == "__main__":
     episode = 0 # episode counter
     print(args)
     
+    best_return = -float("inf")
     for global_step in pbar:
         if global_step == args.measure_burnin + args.learning_starts:
             start_time = time.time()
@@ -377,27 +378,11 @@ if __name__ == "__main__":
             actions = actions.cpu().numpy()[0]
 
         # TRY NOT TO MODIFY: execute the game and log data.
-        # import pdb; pdb.set_trace()
         next_obs, rewards, terminations, truncations, infos = envs.step(actions)
         episodic_return += infos['untransformed_rewards']
-        # TRY NOT TO MODIFY: record rewards for plotting purposes
-        # if "final_info" in infos:
-        #     for info in infos["final_info"]:
-        #         r = float(info["episode"]["r"])
-        #         max_ep_ret = max(max_ep_ret, r)
-        #         avg_returns.append(r)
-        #     desc = (
-        #         f"global_step={global_step}, episodic_return={torch.tensor(avg_returns).mean(): 4.2f} (max={max_ep_ret: 4.2f})"
-        #     )
-        
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
         next_obs = torch.as_tensor(next_obs, device=device, dtype=torch.float)
-        # real_next_obs = next_obs.clone()
-        # for idx, trunc in enumerate([truncations]):
-        #     if trunc:
-        #         real_next_obs[idx] = torch.as_tensor(infos["final_observation"][idx], device=device, dtype=torch.float)
-        # obs = torch.as_tensor(obs, device=device, dtype=torch.float)
         transition = TensorDict(
             observations=obs,
             next_observations=next_obs,
@@ -406,28 +391,21 @@ if __name__ == "__main__":
             terminations=torch.as_tensor(terminations, dtype=torch.bool).reshape(-1, 1),
             dones=torch.as_tensor(terminations, dtype=torch.bool).reshape(-1, 1),
             batch_size=obs.shape[0],
-            device = device,
+            device=device,
         )
 
-        # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
-        
-        
         obs = next_obs
         data = extend_and_sample(transition)
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
             out_main = update_main(data)
             if global_step % args.policy_frequency == 0:  # TD 3 Delayed update support
-                for _ in range(
-                    args.policy_frequency
-                ):  # compensate for the delay by doing 'actor_update_interval' instead of 1
+                for _ in range(args.policy_frequency):  # compensate for the delay by doing 'actor_update_interval' instead of 1
                     out_main.update(update_pol(data))
-
                     alpha.copy_(log_alpha.detach().exp())
 
             # update the target networks
             if global_step % args.target_network_frequency == 0:
-                # lerp is defined as x' = x + w (y-x), which is equivalent to x' = (1-w) x + w y
                 qnet_target.lerp_(qnet_params.data, args.tau)
 
             if global_step % 500 == 0 and start_time is not None:
@@ -448,6 +426,34 @@ if __name__ == "__main__":
                         writer.writerow(['episode', 'reward'])  # Write header only once
                     writer.writerow([episode, episodic_return])
                 episode += 1
+
+            # Save checkpoints every 100k steps
+            if global_step % 100000 == 0:
+                torch.save({
+                    'actor_state_dict': actor.state_dict(),
+                    'qnet_state_dict': qnet.state_dict(),
+                    'qnet_target_state_dict': qnet_target.state_dict(),
+                    'actor_optimizer_state_dict': actor_optimizer.state_dict(),
+                    'q_optimizer_state_dict': q_optimizer.state_dict(),
+                    'alpha': alpha,
+                    'log_alpha': log_alpha,
+                    'a_optimizer_state_dict': a_optimizer.state_dict() if args.autotune else None,
+                }, f'checkpoint_{global_step}.pth')
+
+            # Save the best model
+            if episodic_return > best_return:
+                best_return = episodic_return
+                torch.save({
+                    'actor_state_dict': actor.state_dict(),
+                    'qnet_state_dict': qnet.state_dict(),
+                    'qnet_target_state_dict': qnet_target.state_dict(),
+                    'actor_optimizer_state_dict': actor_optimizer.state_dict(),
+                    'q_optimizer_state_dict': q_optimizer.state_dict(),
+                    'alpha': alpha,
+                    'log_alpha': log_alpha,
+                    'a_optimizer_state_dict': a_optimizer.state_dict() if args.autotune else None,
+                }, 'best_model.pth')
+
         if terminations:
             obs, _ = envs.reset(seed=args.seed)
             obs = torch.as_tensor(obs, device=device, dtype=torch.float)
