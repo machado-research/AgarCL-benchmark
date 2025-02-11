@@ -44,6 +44,6 @@ python3 setup.py install --user
 
 cd /home/mayman/projects/def-machado/mayman/AgarLE-benchmark
 
-python lean_RL_SAC.py --seed $seed
+python /home/mayman/projects/def-machado/mayman/AgarLE-benchmark/optimized_SAC/optimized_SAC.py --seed $seed
 
 
