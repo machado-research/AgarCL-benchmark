@@ -103,7 +103,7 @@ class Args:
     # Algorithm specific arguments
     env_id: str = "agario-screen-v0"
     """the environment id of the task"""
-    total_timesteps: int = 1000000
+    total_timesteps: int = 2 * int(1e6)
     """total timesteps of the experiments"""
     buffer_size: int = int(2e4)
     """the replay memory buffer size"""
@@ -115,9 +115,9 @@ class Args:
     """the batch size of sample from the reply memory"""
     learning_starts: int = 5e3
     """timestep to start learning"""
-    policy_lr: float = 1e-5
+    policy_lr: float = 1e-4
     """the learning rate of the policy network optimizer"""
-    q_lr: float = 1e-3
+    q_lr: float = 1e-4
     """the learning rate of the Q network network optimizer"""
     policy_frequency: int = 2
     """the frequency of training policy (delayed)"""
@@ -438,7 +438,7 @@ if __name__ == "__main__":
                     }
                 print("speed: ", speed, "logs: ", logs)
                 # Save episodic_return in a CSV file
-                with open('episode_returns.csv', mode='a', newline='') as file:
+                with open(f'episode_returns_{args.seed}.csv', mode='a', newline='') as file:
                     writer = csv.writer(file)
                     if global_step == args.learning_starts:
                         writer.writerow(['episode', 'reward'])  # Write header only once
