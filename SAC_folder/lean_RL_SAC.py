@@ -360,6 +360,8 @@ if __name__ == "__main__":
     desc = ""
     episodic_return = 0
     episode = 0 # episode counter
+    print(args)
+    
     for global_step in pbar:
         if global_step == args.measure_burnin + args.learning_starts:
             start_time = time.time()
