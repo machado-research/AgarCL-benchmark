@@ -136,9 +136,10 @@ class Args:
     measure_burnin: int = 3
     """Number of burn-in iterations for speed measure."""
 
+seed_dir = 0 
 
 def make_env(env_id, seed, idx, capture_video, run_name):
-    env_config = json.load(open('env_config.json', 'r'))
+    env_config = json.load(open('../env_config.json', 'r'))
     env = gym.make(env_id, **env_config)
     env = MultiActionWrapper(env)
     env = ObservationWrapper(env)
@@ -220,10 +221,52 @@ class Actor(nn.Module):
         return action, log_prob, mean
 
 
+
+
+
+
+
+# Save checkpoints in the seed directory
+def save_checkpoint(global_step):
+    checkpoint_path = os.path.join(seed_dir, f'checkpoint_{global_step}.pth')
+    torch.save({
+        'actor_state_dict': actor.state_dict(),
+        'qnet_state_dict': qnet.state_dict(),
+        'qnet_target_state_dict': qnet_target.state_dict(),
+        'actor_optimizer_state_dict': actor_optimizer.state_dict(),
+        'q_optimizer_state_dict': q_optimizer.state_dict(),
+        'alpha': alpha,
+        'log_alpha': log_alpha,
+        'a_optimizer_state_dict': a_optimizer.state_dict() if args.autotune else None,
+    }, checkpoint_path)
+
+# Save the best model in the seed directory
+def save_best_model():
+    best_model_path = os.path.join(seed_dir, 'best_model.pth')
+    torch.save({
+        'actor_state_dict': actor.state_dict(),
+        'qnet_state_dict': qnet.state_dict(),
+        'qnet_target_state_dict': qnet_target.state_dict(),
+        'actor_optimizer_state_dict': actor_optimizer.state_dict(),
+        'q_optimizer_state_dict': q_optimizer.state_dict(),
+        'alpha': alpha,
+        'log_alpha': log_alpha,
+        'a_optimizer_state_dict': a_optimizer.state_dict() if args.autotune else None,
+    }, best_model_path)
+
+
+
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    with open('args.json', 'w') as f:
+    
+    # Create a directory for the current seed
+    seed_dir = f"seed_{args.seed}"
+    os.makedirs(seed_dir, exist_ok=True)
+    
+    # Save args.json in the seed directory
+    with open(os.path.join(seed_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, indent=4)
+        
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{args.compile}__{args.cudagraphs}"
 
     # wandb.init(
@@ -420,7 +463,9 @@ if __name__ == "__main__":
                     }
                 print("speed: ", speed, "logs: ", logs)
                 # Save episodic_return in a CSV file
-                with open(f'episode_returns_{args.seed}.csv', mode='a', newline='') as file:
+                # Save episode returns in the seed directory
+                episode_returns_file = os.path.join(seed_dir, f'episode_returns_{args.seed}.csv')
+                with open(episode_returns_file, mode='a', newline='') as file:
                     writer = csv.writer(file)
                     if global_step == args.learning_starts:
                         writer.writerow(['episode', 'reward'])  # Write header only once
@@ -429,30 +474,12 @@ if __name__ == "__main__":
 
             # Save checkpoints every 100k steps
             if global_step % 100000 == 0:
-                torch.save({
-                    'actor_state_dict': actor.state_dict(),
-                    'qnet_state_dict': qnet.state_dict(),
-                    'qnet_target_state_dict': qnet_target.state_dict(),
-                    'actor_optimizer_state_dict': actor_optimizer.state_dict(),
-                    'q_optimizer_state_dict': q_optimizer.state_dict(),
-                    'alpha': alpha,
-                    'log_alpha': log_alpha,
-                    'a_optimizer_state_dict': a_optimizer.state_dict() if args.autotune else None,
-                }, f'checkpoint_{global_step}.pth')
+                save_checkpoint(global_step)
 
             # Save the best model
             if episodic_return > best_return:
                 best_return = episodic_return
-                torch.save({
-                    'actor_state_dict': actor.state_dict(),
-                    'qnet_state_dict': qnet.state_dict(),
-                    'qnet_target_state_dict': qnet_target.state_dict(),
-                    'actor_optimizer_state_dict': actor_optimizer.state_dict(),
-                    'q_optimizer_state_dict': q_optimizer.state_dict(),
-                    'alpha': alpha,
-                    'log_alpha': log_alpha,
-                    'a_optimizer_state_dict': a_optimizer.state_dict() if args.autotune else None,
-                }, 'best_model.pth')
+                save_best_model()
 
         if terminations:
             obs, _ = envs.reset(seed=args.seed)
