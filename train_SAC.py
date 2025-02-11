@@ -47,6 +47,7 @@ class ObservationWrapper(gym.ObservationWrapper):
 
 
 def main():
+    assert torch.cuda.is_available(), "torch.cuda must be available. Aborting."
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--outdir",
@@ -97,7 +98,7 @@ def main():
         default=10000,
         help="Minimum replay buffer size before " + "performing gradient updates.",
     )
-    parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
+    parser.add_argument("--batch-size", type=int, default=32, help="Minibatch size")
     parser.add_argument(
         "--render", action="store_true", help="Render env states in a GUI window."
     )
