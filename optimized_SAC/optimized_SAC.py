@@ -17,7 +17,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 import tqdm
 import tyro
-import wandb
 from tensordict import TensorDict, from_module, from_modules
 from tensordict.nn import CudaGraphModule, TensorDictModule
 from pfrl.initializers import init_chainer_default
@@ -44,11 +43,11 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
         self.single_observation_space = self.observation_space
     def observation(self, observation):
-        return observation.transpose(0, 3, 1, 2).astype(np.float32)/255.0
+        return observation.transpose(0, 3, 1, 2).astype(np.uint8)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        return obs.transpose(0, 3, 1, 2).astype(np.float32)/255.0, info
+        return obs.transpose(0, 3, 1, 2).astype(np.uint8), info
 
 
 class CustomCNN(nn.Module):
@@ -81,6 +80,7 @@ class CustomCNN(nn.Module):
             return init
 
         def forward(self, state):
+            state = torch.as_tensor(state, dtype=torch.float32)/255.0
             h = state
             for layer in self.layers:
                 h = self.activation(layer(h))
@@ -105,7 +105,7 @@ class Args:
     """the environment id of the task"""
     total_timesteps: int = 2 * int(1e6)
     """total timesteps of the experiments"""
-    buffer_size: int = int(2e4)
+    buffer_size: int = int(5e4)
     """the replay memory buffer size"""
     gamma: float = 0.99
     """the discount factor gamma"""
@@ -115,9 +115,9 @@ class Args:
     """the batch size of sample from the reply memory"""
     learning_starts: int = 5e3
     """timestep to start learning"""
-    policy_lr: float = 1e-4
+    policy_lr: float = 5e-5
     """the learning rate of the policy network optimizer"""
-    q_lr: float = 1e-4
+    q_lr: float = 5e-5
     """the learning rate of the Q network network optimizer"""
     policy_frequency: int = 2
     """the frequency of training policy (delayed)"""
@@ -139,7 +139,7 @@ class Args:
 seed_dir = 0 
 
 def make_env(env_id, seed, idx, capture_video, run_name):
-    env_config = json.load(open('../env_config.json', 'r'))
+    env_config = json.load(open('/home/mamm/ayman/thesis/AgarLE-benchmark/env_config.json', 'r'))
     env = gym.make(env_id, **env_config)
     env = MultiActionWrapper(env)
     env = ObservationWrapper(env)
@@ -326,9 +326,8 @@ if __name__ == "__main__":
     else:
         alpha = torch.as_tensor(args.alpha, device=device)
 
-    envs.single_observation_space.dtype = np.float32
+    # envs.single_observation_space.dtype = np.float32
     rb = ReplayBuffer(storage=LazyTensorStorage(args.buffer_size, device=device))
-
     def batched_qf(params, obs, action, next_q_value=None):
         with params.to_module(qnet):
             vals = qnet(obs, action)
@@ -397,7 +396,6 @@ if __name__ == "__main__":
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)
-    obs = torch.as_tensor(obs, device=device, dtype=torch.float)
     pbar = tqdm.tqdm(range(args.total_timesteps))
     start_time = None
     max_ep_ret = -float("inf")
@@ -425,14 +423,14 @@ if __name__ == "__main__":
         episodic_return += infos['untransformed_rewards']
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
-        next_obs = torch.as_tensor(next_obs, device=device, dtype=torch.float)
+        next_obs = torch.as_tensor(next_obs, device=device, dtype=torch.uint8)
         transition = TensorDict(
             observations=obs,
             next_observations=next_obs,
-            actions=torch.as_tensor(actions, dtype=torch.float32).reshape(1,-1),
-            rewards=torch.as_tensor(rewards, dtype=torch.float32).reshape(-1, 1),
-            terminations=torch.as_tensor(terminations, dtype=torch.bool).reshape(-1, 1),
-            dones=torch.as_tensor(terminations, dtype=torch.bool).reshape(-1, 1),
+            actions=np.array(actions, dtype=np.float32).reshape(1,-1),
+            rewards=np.array(rewards, dtype=np.float32).reshape(-1, 1),
+            terminations=np.array(terminations, dtype=np.bool_).reshape(-1, 1),
+            dones=np.array(terminations, dtype=np.bool_).reshape(-1, 1),
             batch_size=obs.shape[0],
             device=device,
         )
@@ -483,7 +481,7 @@ if __name__ == "__main__":
 
         if terminations:
             obs, _ = envs.reset(seed=args.seed)
-            obs = torch.as_tensor(obs, device=device, dtype=torch.float)
+            obs = torch.as_tensor(obs, device=device, dtype=torch.uint8)
             episodic_return = 0
             
     envs.close()
