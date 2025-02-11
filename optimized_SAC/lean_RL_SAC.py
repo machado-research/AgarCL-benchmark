@@ -222,6 +222,8 @@ class Actor(nn.Module):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
+    with open('args.json', 'w') as f:
+        json.dump(vars(args), f, indent=4)
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{args.compile}__{args.cudagraphs}"
 
     # wandb.init(
