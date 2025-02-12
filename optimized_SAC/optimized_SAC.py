@@ -105,23 +105,23 @@ class Args:
     """the environment id of the task"""
     total_timesteps: int = 2 * int(1e6)
     """total timesteps of the experiments"""
-    buffer_size: int = int(5e4)
+    buffer_size: int = int(8e4)
     """the replay memory buffer size"""
     gamma: float = 0.99
     """the discount factor gamma"""
-    tau: float = 5e-3
+    tau: float = 3e-5
     """target smoothing coefficient (default: 0.005)"""
     batch_size: int = 64
     """the batch size of sample from the reply memory"""
-    learning_starts: int = 5e3
+    learning_starts: int = 1e4
     """timestep to start learning"""
-    policy_lr: float = 5e-5
+    policy_lr: float = 1e-5
     """the learning rate of the policy network optimizer"""
-    q_lr: float = 5e-5
+    q_lr: float = 1e-5
     """the learning rate of the Q network network optimizer"""
-    policy_frequency: int = 2
+    policy_frequency: int = 1
     """the frequency of training policy (delayed)"""
-    target_network_frequency: int = 2  # Denis Yarats' implementation delays this by 2.
+    target_network_frequency: int = 1  # Denis Yarats' implementation delays this by 2.
     """the frequency of updates for the target nerworks"""
     alpha: float = 0.2
     """Entropy regularization coefficient."""
@@ -136,10 +136,12 @@ class Args:
     measure_burnin: int = 3
     """Number of burn-in iterations for speed measure."""
 
+    exp_num: int = 11
+
 seed_dir = 0 
 
 def make_env(env_id, seed, idx, capture_video, run_name):
-    env_config = json.load(open('/home/mamm/ayman/thesis/AgarLE-benchmark/env_config.json', 'r'))
+    env_config = json.load(open('env_config.json', 'r'))
     env = gym.make(env_id, **env_config)
     env = MultiActionWrapper(env)
     env = ObservationWrapper(env)
@@ -260,7 +262,7 @@ if __name__ == "__main__":
     args = tyro.cli(Args)
     
     # Create a directory for the current seed
-    seed_dir = f"seed_{args.seed}"
+    seed_dir = f"seed_{args.seed} _ {args.exp_num}"
     os.makedirs(seed_dir, exist_ok=True)
     
     # Save args.json in the seed directory
@@ -376,7 +378,7 @@ if __name__ == "__main__":
 
             alpha_loss.backward()
             a_optimizer.step()
-        return TensorDict(alpha=alpha.detach(), actor_loss=actor_loss.detach(), alpha_loss=alpha_loss.detach())
+        return TensorDict(alpha=alpha.detach(), actor_loss=actor_loss.detach(), alpha_loss= alpha_loss.detach() if args.autotune else None)
 
     def extend_and_sample(transition):
         rb.extend(transition)
@@ -459,25 +461,25 @@ if __name__ == "__main__":
                         "alpha_loss": out_main.get("alpha_loss", 0),
                         "qf_loss": out_main["qf_loss"].mean(),
                     }
-                print("speed: ", speed, "logs: ", logs)
-                # Save episodic_return in a CSV file
-                # Save episode returns in the seed directory
-                episode_returns_file = os.path.join(seed_dir, f'episode_returns_{args.seed}.csv')
-                with open(episode_returns_file, mode='a', newline='') as file:
-                    writer = csv.writer(file)
-                    if global_step == args.learning_starts:
-                        writer.writerow(['episode', 'reward'])  # Write header only once
-                    writer.writerow([episode, episodic_return])
-                episode += 1
+                    print("speed: ", speed, "logs: ", logs)
+                    # Save episodic_return in a CSV file
+                    # Save episode returns in the seed directory
+                    episode_returns_file = os.path.join(seed_dir, f'episode_returns_{args.seed}.csv')
+                    with open(episode_returns_file, mode='a', newline='') as file:
+                        writer = csv.writer(file)
+                        if global_step == args.learning_starts:
+                            writer.writerow(['episode', 'reward'])  # Write header only once
+                        writer.writerow([episode, episodic_return])
+                    episode += 1
 
             # Save checkpoints every 100k steps
             if global_step % 100000 == 0:
                 save_checkpoint(global_step)
 
             # Save the best model
-            if episodic_return > best_return:
-                best_return = episodic_return
-                save_best_model()
+            # if episodic_return > best_return:
+            #     best_return = episodic_return
+            #     save_best_model()
 
         if terminations:
             obs, _ = envs.reset(seed=args.seed)
