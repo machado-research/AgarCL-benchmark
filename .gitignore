@@ -15,6 +15,7 @@ plots/
 venv/
 res/
 agar/
+seed_*/
 # ignore python caches
 .venv/
 venv/
