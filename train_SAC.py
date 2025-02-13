@@ -52,7 +52,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="results",
+        default="SAC_results_Exp1",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -83,7 +83,7 @@ def main():
     parser.add_argument(
         "--eval-n-runs",
         type=int,
-        default=10,
+        default=1,
         help="Number of episodes run for each evaluation.",
     )
     parser.add_argument(
@@ -98,7 +98,7 @@ def main():
         default=10000,
         help="Minimum replay buffer size before " + "performing gradient updates.",
     )
-    parser.add_argument("--batch-size", type=int, default=32, help="Minibatch size")
+    parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
     parser.add_argument(
         "--render", action="store_true", help="Render env states in a GUI window."
     )
@@ -127,6 +127,22 @@ def main():
         default=1.0,
         help="Weight initialization scale of policy output.",
     )
+    parser.add_argument(
+        "--lr", type=float, default=3e-5, help="Learning rate."
+    )
+    parser.add_argument(
+        "--update-interval", type=int , default=4, help = "Updating the neural network in every time steps."
+    )
+    parser.add_argument(
+        "--replay-buffer", type=int, default=int(1e5), help="Replay Buffer."
+    )
+    parser.add_argument(
+        "--soft-update-tau",
+        type=float,
+        default=0.01,
+        help="Coefficient for soft update of the target network.",
+    )
+    
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
@@ -231,13 +247,13 @@ def main():
     policy = nn.Sequential(
         CustomCNN(n_input_channels=obs_size, n_output_channels=256),
         nn.ReLU(),
-        nn.Linear(256, action_size * 2),
+        init_chainer_default(nn.Linear(256, action_size * 2)),
         Lambda(squashed_diagonal_gaussian_head),
     )
     # torch.nn.init.xavier_uniform_(policy[0].weight)
     # torch.nn.init.xavier_uniform_(policy[2].weight)
-    torch.nn.init.xavier_uniform_(policy[2].weight, gain=args.policy_output_scale)
-    policy_optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
+    # torch.nn.init.xavier_uniform_(policy[2].weight, gain=args.policy_output_scale)
+    policy_optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
 
     class SoftQNetwork(nn.Module):
         def __init__(self, image_channels, action_dim, feature_dim=64):
@@ -271,13 +287,13 @@ def main():
     def make_q_func_with_optimizer():
         q_func = SoftQNetwork(image_channels=obs_size, action_dim=action_size)
         
-        q_func_optimizer = torch.optim.Adam(q_func.parameters(), lr=3e-4)
+        q_func_optimizer = torch.optim.Adam(q_func.parameters(), lr=args.lr)
         return q_func, q_func_optimizer
 
     q_func1, q_func1_optimizer = make_q_func_with_optimizer()
     q_func2, q_func2_optimizer = make_q_func_with_optimizer()
 
-    rbuf = replay_buffers.ReplayBuffer(10**5)
+    rbuf = replay_buffers.ReplayBuffer(args.replay_buffer)
 
     def burnin_action_func():
         """Select random actions until model is updated one or more times."""
@@ -303,7 +319,9 @@ def main():
         burnin_action_func=burnin_action_func,
         entropy_target=-action_size,
         temperature_optimizer_lr=3e-4,
-        update_interval = 4,
+        update_interval=args.update_interval,
+        soft_update_tau=args.soft_update_tau,
+        max_grad_norm=0.5,
     )
 
     if len(args.load) > 0 or args.load_pretrained:

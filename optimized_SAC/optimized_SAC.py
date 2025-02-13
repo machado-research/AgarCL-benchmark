@@ -254,7 +254,7 @@ def save_best_model():
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    
+    assert torch.cuda.is_available(), "CUDA is not available"
     # Create a directory for the current seed
     seed_dir = f"seed_{args.seed} _ {args.exp_num}"
     os.makedirs(seed_dir, exist_ok=True)
