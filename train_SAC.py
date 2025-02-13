@@ -303,6 +303,7 @@ def main():
         burnin_action_func=burnin_action_func,
         entropy_target=-action_size,
         temperature_optimizer_lr=3e-4,
+        update_interval = 4,
     )
 
     if len(args.load) > 0 or args.load_pretrained:

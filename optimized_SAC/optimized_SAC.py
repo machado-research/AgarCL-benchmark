@@ -115,15 +115,15 @@ class Args:
     """the batch size of sample from the reply memory"""
     learning_starts: int = 1e4
     """timestep to start learning"""
-    policy_lr: float = 1e-5
+    policy_lr: float = 3e-5
     """the learning rate of the policy network optimizer"""
-    q_lr: float = 1e-5
+    q_lr: float = 3e-5
     """the learning rate of the Q network network optimizer"""
     policy_frequency: int = 1
     """the frequency of training policy (delayed)"""
     target_network_frequency: int = 1  # Denis Yarats' implementation delays this by 2.
     """the frequency of updates for the target nerworks"""
-    alpha: float = 0.2
+    alpha: float = 0.3
     """Entropy regularization coefficient."""
     autotune: bool = True
     """automatic tuning of the entropy coefficient"""
@@ -217,15 +217,9 @@ class Actor(nn.Module):
         log_prob = normal.log_prob(x_t)
         # Enforcing Action Bound
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + 1e-6)
-        # import pdb; pdb.set_trace()
         log_prob = log_prob.sum(1, keepdim=True)
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
         return action, log_prob, mean
-
-
-
-
-
 
 
 # Save checkpoints in the seed directory
@@ -438,6 +432,7 @@ if __name__ == "__main__":
         )
 
         obs = next_obs
+        episode_end = terminations or truncations
         data = extend_and_sample(transition)
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
@@ -445,45 +440,55 @@ if __name__ == "__main__":
             if global_step % args.policy_frequency == 0:  # TD 3 Delayed update support
                 for _ in range(args.policy_frequency):  # compensate for the delay by doing 'actor_update_interval' instead of 1
                     out_main.update(update_pol(data))
-                    alpha.copy_(log_alpha.detach().exp())
+                    
+                    if args.autotune:
+                        alpha.copy_(log_alpha.detach().exp())
 
             # update the target networks
             if global_step % args.target_network_frequency == 0:
                 qnet_target.lerp_(qnet_params.data, args.tau)
 
-            if global_step % 500 == 0 and start_time is not None:
-                speed = (global_step - measure_burnin) / (time.time() - start_time)
-                pbar.set_description(f"{speed: 4.4f} sps, " + desc)
-                with torch.no_grad():
-                    logs = {
-                        "episode_return": episodic_return,
-                        "actor_loss": out_main["actor_loss"].mean(),
-                        "alpha_loss": out_main.get("alpha_loss", 0),
-                        "qf_loss": out_main["qf_loss"].mean(),
-                    }
-                    print("speed: ", speed, "logs: ", logs)
-                    # Save episodic_return in a CSV file
-                    # Save episode returns in the seed directory
-                    episode_returns_file = os.path.join(seed_dir, f'episode_returns_{args.seed}.csv')
-                    with open(episode_returns_file, mode='a', newline='') as file:
-                        writer = csv.writer(file)
-                        if global_step == args.learning_starts:
-                            writer.writerow(['episode', 'reward'])  # Write header only once
-                        writer.writerow([episode, episodic_return])
-                    episode += 1
+        if episode_end and start_time is not None:
+            speed = (global_step - measure_burnin) / (time.time() - start_time)
+            pbar.set_description(f"{speed: 4.4f} sps, " + desc)
+            with torch.no_grad():
+                logs = {
+                    "episode_return": episodic_return,
+                    "actor_loss": out_main["actor_loss"].mean().item(),
+                    "alpha_loss": out_main.get("alpha_loss", 0).item(),
+                    "qf_loss": out_main["qf_loss"].mean().item(),
+                }
+                # Save logs in a CSV file
+                logs_file = os.path.join(seed_dir, f'logs_{args.seed}.csv')
+                with open(logs_file, mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    if global_step == args.learning_starts:
+                        writer.writerow(['global_step', 'speed', 'episode_return', 'actor_loss', 'alpha_loss', 'qf_loss'])  # Write header only once
+                    writer.writerow([global_step, speed, logs["episode_return"], logs["actor_loss"], logs["alpha_loss"], logs["qf_loss"]])
+                # Save episodic_return in a CSV file
+                # Save episode returns in the seed directory
+                episode_returns_file = os.path.join(seed_dir, f'episode_returns_{args.seed}.csv')
+                with open(episode_returns_file, mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    if global_step == args.learning_starts:
+                        writer.writerow(['episode', 'reward'])  # Write header only once
+                    writer.writerow([episode, episodic_return])
+                episode += 1
+                
+                obs, _ = envs.reset(seed=args.seed)
+                obs = torch.as_tensor(obs, device=device, dtype=torch.uint8)
+                episodic_return = 0
 
+        
+            
             # Save checkpoints every 100k steps
-            if global_step % 100000 == 0:
-                save_checkpoint(global_step)
+            # if global_step % 100000 == 0:
+            #     save_checkpoint(global_step)
 
             # Save the best model
             # if episodic_return > best_return:
             #     best_return = episodic_return
             #     save_best_model()
 
-        if terminations:
-            obs, _ = envs.reset(seed=args.seed)
-            obs = torch.as_tensor(obs, device=device, dtype=torch.uint8)
-            episodic_return = 0
             
     envs.close()
