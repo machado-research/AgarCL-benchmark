@@ -52,7 +52,11 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
+<<<<<<< HEAD
         default="SAC_results_Exp1_better",
+=======
+        default="SAC_results_Exp1",
+>>>>>>> bb65a00504e2abdd3e821c167bf517bc88206e4f
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
