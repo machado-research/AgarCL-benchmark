@@ -8,7 +8,7 @@ from PyExpUtils.collection.Collector import Collector
 
 from src.wrappers.sb3 import TrainingCallback
 from src.wrappers.gym import SB3Wrapper, ModifyDiscreteActionWrapper
-from src.utils.torch.networks import CNNPolicy
+# from src.utils.torch.networks import CNNPolicy
 
 
 class CustomActorCriticPolicy(DQNPolicy):

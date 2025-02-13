@@ -1,126 +1,78 @@
 import gymnasium as gym
-import torch.nn as nn
-import torch
-from torch.distributions import Normal, Categorical
-
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from torch import nn
+import torch 
+from pfrl.initializers import init_chainer_default
 import numpy as np
+import pfrl 
 
-class CNNPolicy(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 128):
-        super().__init__(observation_space, features_dim)
-
-        # Assuming obs_shape is (C, H, W) for channel, height, width
-        self.conv_layers = nn.Sequential(
-            nn.Conv2d(4, 64, kernel_size=16, stride=1),
-            # Add LayerNorm after the first Conv2d layer
-            nn.LayerNorm([64, 113, 113]),
-            nn.ReLU(),
-            nn.Conv2d(64, 32, kernel_size=8, stride=1),
-            # Add LayerNorm after the second Conv2d layer
-            nn.LayerNorm([32, 106, 106]),
-            nn.ReLU(),
-            nn.Flatten(),
-            # Adjust the input size according to the output of Conv2d
-            nn.Linear(32 * 106 * 106, 128),
-            nn.LayerNorm(128),  # Add LayerNorm after the first Linear layer
-            nn.ReLU(),
-        )
-
-    def forward(self, x):
-        x = x.squeeze(1)
-        x = x.permute(0, 3, 1, 2)
-        x = self.conv_layers(x)
-        return x
-    
-
-
-def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
-    torch.nn.init.orthogonal_(layer.weight, std)
-    torch.nn.init.constant_(layer.bias, bias_const)
-    return layer 
-
-#The CNN architecture for the Actor-Critic network: Len_Screen is 128x128x4
-class PPOAgent(nn.Module):
-    def __init__(self, envs):
-        super().__init__()
-        self.critic = nn.Sequential(
-            layer_init(nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1)),
-            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
-            nn.ReLU(),
-            layer_init(nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1)),
-            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the second Conv2d layer
-            nn.ReLU(),
-            nn.Flatten(),
-            layer_init(nn.Linear(64 * 106* 106, 256)),
-            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
-            nn.ReLU(),
-            layer_init(nn.Linear(256, 1), std=1.0),
-        )
-        self.actor_base = nn.Sequential(
-            nn.Conv2d(in_channels=envs.observation_space.shape[0], out_channels=64, kernel_size=16, stride=1),
-            nn.LayerNorm([64, 113, 113]),  # Add LayerNorm after the first Conv2d layer
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=8, stride=1),  # Additional Conv2d layer
-            nn.LayerNorm([64, 106, 106]),  # Add LayerNorm after the additional Conv2d layer
-            nn.ReLU(),
-            nn.Flatten(),
-            layer_init(nn.Linear(64 * 106* 106, 256)),
-            nn.LayerNorm(256),  # Add LayerNorm after the first Linear layer
-            nn.ReLU(),
+class CustomCNN(nn.Module):
+        def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
+            super().__init__()
+            self.n_input_channels = n_input_channels
+            self.activation = activation
+            self.n_output_channels = n_output_channels
+            self.layers = nn.ModuleList(
+                [
+                    nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
+                    nn.LayerNorm([32, 31, 31]),
+                    nn.Conv2d(32, 64, 4, stride=2),
+                    nn.LayerNorm([64, 14, 14]),
+                    nn.Conv2d(64, 32, 3, stride=1),
+                    nn.LayerNorm([32, 12, 12]),
+                ]
             )
-        
-         # Separate outputs for continuous and discrete actions
-        self.actor_mean = layer_init(nn.Linear(256, 2))  # 2 continuous actions
-        self.actor_logstd = nn.Parameter(torch.zeros(1, 2))  # Log std for 2 continuous actions
-        self.actor_discrete = layer_init(nn.Linear(256, 3))  # 3 discrete actions (logits)
+            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
 
-    def get_value(self, x):
-        return self.critic(x)
-    
-    def get_action_and_value(self, x, action=None):
-        features = self.actor_base(x)
-        
-        # Continuous actions
-        action_mean = self.actor_mean(features)
-        action_logstd = self.actor_logstd.expand_as(action_mean)
-        action_std = torch.exp(action_logstd)
-        probs = Normal(action_mean, action_std)
-        
-        if action is None:
-            action = probs.sample()
-            
-        return torch.tanh(action), probs.log_prob(action).sum(1), probs.entropy().sum(1), self.critic(x)
-    
-    
-    def get_hybrid_action_and_value(self, x, action=None):
-        features = self.actor_base(x)
-        
-        # Continuous actions
-        action_mean = self.actor_mean(features)
-        action_logstd = self.actor_logstd.expand_as(action_mean)
-        action_std = torch.exp(action_logstd)  # Ensure std is positive
-        continuous_dist = Normal(action_mean, action_std)
-        
-        # Discrete actions
-        action_logits = self.actor_discrete(features)
-        discrete_dist = Categorical(logits=action_logits)
+            self.apply(init_chainer_default)
+            self.apply(self.constant_bias_initializer(bias=bias))
 
-        if action is None:
-            continuous_action = continuous_dist.sample()
-            discrete_action = discrete_dist.sample()
-        else:
-            action = action.reshape(-1,action.shape[-1])
-            continuous_action, discrete_action = action[:, :2], action[:, 2]
-        
-        #Clip continuous action to the valid range [-1,1]
-        continuous_action = torch.tanh(continuous_action)
-        # Compute log probabilities
-        continuous_log_prob = continuous_dist.log_prob(continuous_action).sum(1)
-        discrete_log_prob = discrete_dist.log_prob(discrete_action)
-        log_prob = continuous_log_prob + discrete_log_prob  # Sum log probabilities
-        
-        # Compute entropy for PPO updates
-        entropy = continuous_dist.entropy().sum(1) + discrete_dist.entropy()
+        def constant_bias_initializer(self, bias=0.1):
+            def init(m):
+                if isinstance(m, nn.Linear):
+                    nn.init.constant_(m.bias, bias)
+            return init
 
-        return (continuous_action, discrete_action), log_prob, entropy, self.critic(x)
+        def forward(self, state):
+            h = state
+            for layer in self.layers:
+                h = self.activation(layer(h))
+            h_flat = h.view(h.size(0), -1)
+            return self.activation(self.output(h_flat))
+
+# For DQN
+class DistributionalDuelingHead(nn.Module):
+    """Head module for defining a distributional dueling network.
+
+    This module expects a (batch_size, in_size)-shaped `torch.Tensor` as input
+    and returns `pfrl.action_value.DistributionalDiscreteActionValue`.
+
+    Args:
+        in_size (int): Input size.
+        n_actions (int): Number of actions.
+        n_atoms (int): Number of atoms.
+        v_min (float): Minimum value represented by atoms.
+        v_max (float): Maximum value represented by atoms.
+    """
+
+    def __init__(self, in_size, n_actions, n_atoms, v_min, v_max):
+        super().__init__()
+        assert in_size % 2 == 0
+        self.n_actions = n_actions
+        self.n_atoms = n_atoms
+        self.register_buffer(
+            "z_values", torch.linspace(v_min, v_max, n_atoms, dtype=torch.float)
+        )
+        self.a_stream = nn.Linear(in_size // 2, n_actions * n_atoms)
+        self.v_stream = nn.Linear(in_size // 2, n_atoms)
+
+    def forward(self, h):
+        h_a, h_v = torch.chunk(h, 2, dim=1)
+        a_logits = self.a_stream(h_a).reshape((-1, self.n_actions, self.n_atoms))
+        a_logits = a_logits - a_logits.mean(dim=1, keepdim=True)
+        v_logits = self.v_stream(h_v).reshape((-1, 1, self.n_atoms))
+        probs = nn.functional.softmax(a_logits + v_logits, dim=2)
+        return pfrl.action_value.DistributionalDiscreteActionValue(probs, self.z_values)
+
+def phi(x):
+        # Feature extractor
+        return np.asarray(x, dtype=np.float32) / 255

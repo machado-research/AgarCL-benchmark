@@ -19,5 +19,6 @@
     "autotune": true,
     "compile": false,
     "cudagraphs": true,
-    "measure_burnin": 3
+    "measure_burnin": 3,
+    "eval_interval": 50000
 }

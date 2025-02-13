@@ -10,6 +10,7 @@ class ExperimentModel(ExperimentDescription):
         self.eval_steps = d.get('eval_steps')
         self.env_name = d.get('env_name')
         self.use_jax = d.get('use_jax')
+        self.save_path = d.get('eval_interval')
         
         self.name = self.getExperimentName()
 

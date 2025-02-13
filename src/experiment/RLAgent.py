@@ -5,7 +5,7 @@ import numpy as np
 
 def get_agent(name, use_jax):
     path = 'src.algorithms.jax' if use_jax else 'src.algorithms.torch'
-    if name in ['DQN', 'SAC', 'PPO', 'PPO_CleanRL']:
+    if name in ['DQN', 'SAC', 'PPO', 'PFRL_DQN', 'PFRL_PPO', 'PFRL_SAC']:
         mod = import_module(f'{path}.{name}')
     else:
         raise ValueError(f'Unknown agent: {name}')

@@ -1,5 +1,5 @@
 {
-    "agent": "DQN",
+    "agent": "PFRL_DQN",
     "total_steps": 20,
     "env_name": "agario-screen-v0",
     "use_jax": false,
@@ -14,6 +14,7 @@
         "num_layers": 2,
         "hidden_size": 256,
         "norm_obs": false,
-        "norm_reward": false
+        "norm_reward": false,
+        "eval_interval": 50000
     }
 }

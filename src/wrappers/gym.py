@@ -20,10 +20,10 @@ def make_env(env_name, config, gamma, normalize_observation=False, normalize_rew
         env = HybridActionWrapper(env)
     else:
         env = ContinuousActionWrapper(env)
-    env = ObservationWrapper(env)
+    # env = ObservationWrapper(env)
 
     if normalize_observation:
-        env = NormalizeObservation(env)
+        # env = NormalizeObservation(env)
         env = gym.wrappers.TransformObservation(env, lambda obs: np.clip(obs, -10, 10))
 
     if normalize_reward:
@@ -351,17 +351,22 @@ class ModifyDiscreteActionWrapper(gym.ActionWrapper):
 class ModifyObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
+        # Modify observation space if needed
         self.observation_space = env.observation_space
 
     def observation(self, observation):
-        print(observation.shape)
-        modified_observation = observation.transpose(0, 3, 1, 2)[0]
-        return modified_observation
+        # Modify the observation here
+        # Normalize the observation
+        modified_observation = observation[0].transpose(2, 0, 1)
+        # modified_observation = modified_observation/255.0        
+        # Normalize the observation
+        return modified_observation.astype(np.uint8)
 
     def reset(self, **kwargs):
-        obs, _ = self.env.reset(**kwargs)
-        obs = self.observation(obs)
-        return obs, {}
+        obs, info = self.env.reset(**kwargs)
+        obs = obs[0].transpose(2,0,1).astype(np.uint8)
+        # obs = obs/255.0
+        return obs, info
 
 
 #PPO - CleanRL
@@ -385,15 +390,3 @@ class HybridActionWrapper(gym.ActionWrapper):
 
     def action(self, action):
         return action
-
-class ObservationWrapper(gym.ObservationWrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
-
-    def observation(self, observation):
-        return observation.transpose(0, 3, 1, 2)
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-        return obs.transpose(0, 3, 1, 2), info

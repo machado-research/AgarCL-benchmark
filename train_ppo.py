@@ -19,7 +19,6 @@ from pfrl import replay_buffers, utils
 from pfrl.q_functions import DistributionalDuelingDQN
 from pfrl.wrappers import atari_wrappers
 # from src.wrappers.gym import make_env
-from pfrl.initializers import init_chainer_default
 
 from pfrl.agents import PPO
 # from gym import spaces

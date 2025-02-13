@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 # ------------------
 parser = argparse.ArgumentParser()
 parser.add_argument('-e', '--exp', type=str, required=True,
-                    help="The Json File of PPO or SAC")
+                    help="The Json File of DQN, PPO or SAC")
 parser.add_argument('-i', '--idxs', nargs='+', type=int,
                     required=True, help="The indices of the runs to train: Seeds")
 parser.add_argument('--save_path', type=str, default=f'{os.getcwd()}')
@@ -82,6 +82,8 @@ for idx in indices:
 
     render_path = f'{args.save_path}/videos/{exp_name}'
     os.makedirs(render_path, exist_ok=True)
+    import pdb; pdb.set_trace()
+
 
     # Run the experiment
     start_time = time.time()
