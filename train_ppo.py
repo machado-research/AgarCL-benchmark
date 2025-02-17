@@ -69,7 +69,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="PPO_res_1_1",
+        default="PPO_results_Exp2",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."

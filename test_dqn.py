@@ -32,7 +32,7 @@ class CustomCNN(nn.Module):
                     nn.LayerNorm([32, 12, 12]),
                 ]
             )
-            self.output = nn.Linear(32 * 11 * 11, n_output_channels)  # Adjusted for 3x84x84 input
+            self.output = nn.Linear(32 * 12 * 12, n_output_channels)  # Adjusted for 3x84x84 input
 
             self.apply(init_chainer_default)
             self.apply(self.constant_bias_initializer(bias=bias))
@@ -153,7 +153,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="DQN_results_Exp1_2",
+        default="DQN_results_Exp2",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
