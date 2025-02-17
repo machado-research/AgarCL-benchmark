@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="DQN_results_Exp1_2",
+        default="DQN_results_Exp3",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
