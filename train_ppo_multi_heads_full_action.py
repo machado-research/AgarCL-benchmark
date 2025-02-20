@@ -21,7 +21,7 @@ from pfrl.wrappers import atari_wrappers
 # from src.wrappers.gym import make_env
 from pfrl.initializers import init_chainer_default
 
-from pfrl.agents import PPO
+from pfrl.agents import HybridPPO
 # from gym import spaces
 import functools
 import gym_agario
@@ -287,7 +287,7 @@ def main():
 
     opt = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-4)
 
-    agent = PPO(
+    agent = HybridPPO(
         model,
         opt,
         obs_normalizer=obs_normalizer,
