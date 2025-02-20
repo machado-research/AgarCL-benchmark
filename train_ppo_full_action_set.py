@@ -106,7 +106,7 @@ def main():
     )
     parser.add_argument("--load-pretrained", action="store_true", default=False)
     parser.add_argument(
-        "--load", type=str, default="", help="Directory to load agent from."
+        "--load", type=str, default="/home/mamm/ayman/thesis/AgarLE-benchmark/1950000_checkpoint", help="Directory to load agent from."
     )
     parser.add_argument(
         "--log-level", type=int, default=logging.INFO, help="Level of the root logger."
@@ -325,27 +325,27 @@ def main():
         else:
             agent.load(utils.download_model("PPO", args.env, model_type="final")[0])
 
-    if args.demo:
-        env = make_batch_env(True)
-        eval_stats = experiments.eval_performance(
-            env=env,
-            agent=agent,
-            n_steps=None,
-            n_episodes=args.eval_n_runs,
-            max_episode_len=timestep_limit,
+    # if args.demo:
+    env = make_batch_env(True)
+    eval_stats = experiments.eval_performance(
+        env=env,
+        agent=agent,
+        n_steps=None,
+        n_episodes=args.eval_n_runs,
+        max_episode_len=timestep_limit,
+    )
+    print(
+        "n_runs: {} mean: {} median: {} stdev {}".format(
+            args.eval_n_runs,
+            eval_stats["mean"],
+            eval_stats["median"],
+            eval_stats["stdev"],
         )
-        print(
-            "n_runs: {} mean: {} median: {} stdev {}".format(
-                args.eval_n_runs,
-                eval_stats["mean"],
-                eval_stats["median"],
-                eval_stats["stdev"],
-            )
-        )
+    )
 
-        with open(os.path.join(args.outdir, "demo_scores.json"), "w") as f:
-            json.dump(eval_stats, f)
-    else:
+    with open(os.path.join(args.outdir, "demo_scores.json"), "w") as f:
+        json.dump(eval_stats, f)
+    # else:
         # experiments.train_agent_batch_with_evaluation(
         #     agent=agent,
         #     env=make_batch_env(False),
@@ -359,21 +359,21 @@ def main():
         #     max_episode_len=timestep_limit,
         #     save_best_so_far_agent=False,
         # )
-        experiments.train_agent_with_evaluation(
-            agent=agent,
-            env=make_batch_env(False),
-            eval_env=make_batch_env(True),
-            steps=args.steps,
-            eval_n_steps=None,
-            eval_n_episodes=args.eval_n_runs,
-            eval_interval=args.eval_interval,
-            outdir=args.outdir,
-            save_best_so_far_agent=True,
-            checkpoint_freq = 50000,
-            # log_interval=args.log_interval,
-             train_max_episode_len=timestep_limit,
-             eval_max_episode_len=timestep_limit,
-        )
+        # experiments.train_agent_with_evaluation(
+        #     agent=agent,
+        #     env=make_batch_env(False),
+        #     eval_env=make_batch_env(True),
+        #     steps=args.steps,
+        #     eval_n_steps=None,
+        #     eval_n_episodes=args.eval_n_runs,
+        #     eval_interval=args.eval_interval,
+        #     outdir=args.outdir,
+        #     save_best_so_far_agent=True,
+        #     checkpoint_freq = 50000,
+        #     # log_interval=args.log_interval,
+        #      train_max_episode_len=timestep_limit,
+        #      eval_max_episode_len=timestep_limit,
+        # )
 
 
 if __name__ == "__main__":

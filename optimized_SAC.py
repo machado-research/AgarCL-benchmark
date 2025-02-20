@@ -113,7 +113,7 @@ class Args:
     """target smoothing coefficient (default: 0.005)"""
     batch_size: int = 64
     """the batch size of sample from the reply memory"""
-    learning_starts: int = 1e4
+    learning_starts: int = 1e3
     """timestep to start learning"""
     policy_lr: float = 3e-5
     """the learning rate of the policy network optimizer"""
@@ -121,7 +121,7 @@ class Args:
     """the learning rate of the Q network network optimizer"""
     policy_frequency: int = 1
     """the frequency of training policy (delayed)"""
-    target_network_frequency: int = 1  # Denis Yarats' implementation delays this by 2.
+    target_network_frequency: int = 4  # Denis Yarats' implementation delays this by 2.
     """the frequency of updates for the target nerworks"""
     alpha: float = 0.3
     """Entropy regularization coefficient."""
@@ -349,7 +349,6 @@ if __name__ == "__main__":
             qnet_params, data["observations"], data["actions"], next_q_value
         )
         qf_loss = qf_a_values.sum(0)
-
         qf_loss.backward()
         q_optimizer.step()
         return TensorDict(qf_loss=qf_loss.detach())
@@ -435,7 +434,7 @@ if __name__ == "__main__":
         episode_end = terminations or truncations
         data = extend_and_sample(transition)
         # ALGO LOGIC: training.
-        if global_step > args.learning_starts:
+        if global_step >= args.learning_starts:
             out_main = update_main(data)
             if global_step % args.policy_frequency == 0:  # TD 3 Delayed update support
                 for _ in range(args.policy_frequency):  # compensate for the delay by doing 'actor_update_interval' instead of 1
@@ -454,9 +453,9 @@ if __name__ == "__main__":
             with torch.no_grad():
                 logs = {
                     "episode_return": episodic_return,
-                    "actor_loss": out_main["actor_loss"].mean().item(),
-                    "alpha_loss": out_main.get("alpha_loss", 0).item(),
-                    "qf_loss": out_main["qf_loss"].mean().item(),
+                    "actor_loss": out_main["actor_loss"].mean().item() if "actor_loss" in out_main else float('nan'),
+                    "alpha_loss": out_main["alpha_loss"].mean().item() if "alpha_loss" in out_main else float('nan'),
+                    "qf_loss": out_main["qf_loss"].mean().item() if "qf_loss" in out_main else float('nan'),
                 }
                 # Save logs in a CSV file
                 logs_file = os.path.join(seed_dir, f'logs_{args.seed}.csv')
