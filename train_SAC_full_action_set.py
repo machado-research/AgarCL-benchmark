@@ -327,7 +327,7 @@ def main():
         # Feature extractor
         return np.asarray(x, dtype=np.float32) / 255
     # Hyperparameters in http://arxiv.org/abs/1802.09477
-    agent = pfrl.agents.SoftActorCritic(
+    agent = pfrl.agents.HybridSoftActorCritic(
         policy,
         q_func1,
         q_func2,
