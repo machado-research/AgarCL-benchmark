@@ -41,6 +41,7 @@ class MultiActionWrapper(gym.ActionWrapper):
     def action(self, action):
         return action  # no-op on the second action
 
+
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -52,6 +53,25 @@ class ObservationWrapper(gym.ObservationWrapper):
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         return obs[0].transpose(2, 0, 1), info
+
+class NormalizeReward(gym.RewardWrapper):
+    #MIN-MAX Normalization
+    def __init__(self, env, gamma=0.99):
+        super().__init__(env)
+        self.r_min = -1.0
+        self.r_max = 1.0
+        self.epsilon = 1e-8  # Small value to prevent division by zero
+    
+    def reward(self, reward):
+        """Normalize reward to [-1, 1] range."""
+        if self.r_max - self.r_min < self.epsilon:
+            return 0.0  # Avoid division by zero, return neutral reward
+        # print("REWARD: ", reward)
+        r = (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon)
+        # r = 2 * (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon) - 1
+        return r
+
+
 
 
 def main():
@@ -74,11 +94,17 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="PPO_res_1_1",
+        default="PPO_test",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
         ),
+    )
+    parser.add_argument(
+    "--reward", 
+    type=str, 
+    default = "reward_gym", #min-max, reward_gym     
+    help="REWARD TYPE"
     )
     parser.add_argument(
         "--steps",
@@ -181,9 +207,13 @@ def main():
         # env = gym.wrappers.flatten_observation.FlattenObservation(env)
         # Cast observations to float32 because our model uses float32
         env = pfrl.wrappers.CastObservationToFloat32(env)
-        #Scaling Rewards
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, 0, 1))
+
+        if(args.reward == "reward_gym"):
+            env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+            env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+        else: 
+            print("Using Min-Max Normalization")
+            env = NormalizeReward(env, gamma=gamma)
         # if args.monitor:
         #     env = pfrl.wrappers.Monitor(env, args.outdir)
         # if args.render:

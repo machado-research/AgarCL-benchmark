@@ -31,8 +31,8 @@ class MultiActionWrapper(gym.ActionWrapper):
         self.action_space = gym.spaces.Tuple((
             # (dx, dy) movemment vector
             gym.spaces.Box(low=-1, high=1, shape=(2,)),
-            # 0=noop  1=split  2=feed
-            gym.spaces.Discrete(3),
+            # 0=noop  1=feed  2=split
+            gym.spaces.Discrete(2),
         ))
 
     def action(self, action):
@@ -44,12 +44,28 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
 
     def observation(self, observation):
-        return observation[0].transpose(2, 0, 1)
+        return observation[0].transpose(2, 0, 1).astype(np.uint8)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        return obs[0].transpose(2, 0, 1), info
+        return obs[0].transpose(2, 0, 1).astype(np.uint8), info
 
+class NormalizeReward(gym.RewardWrapper):
+    #MIN-MAX Normalization
+    def __init__(self, env, gamma=0.99):
+        super().__init__(env)
+        self.r_min = -1.0
+        self.r_max = 1.0
+        self.epsilon = 1e-8  # Small value to prevent division by zero
+    
+    def reward(self, reward):
+        """Normalize reward to [-1, 1] range."""
+        if self.r_max - self.r_min < self.epsilon:
+            return 0.0  # Avoid division by zero, return neutral reward
+        # print("REWARD: ", reward)
+        r = (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon)
+        # r = 2 * (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon) - 1
+        return r
 
 def main():
     assert torch.cuda.is_available(), "torch.cuda must be available. Aborting."
@@ -60,7 +76,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="SAC_results_Exp2",
+        default="SAC_results_Exp4",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -71,6 +87,12 @@ def main():
         type=str,
         default="agario-screen-v0",
         help="AgarIO",
+    )
+    parser.add_argument(
+    "--reward", 
+    type=str, 
+    default = "reward_gym", #min-max, reward_gym     
+    help="REWARD TYPE"
     )
     parser.add_argument(
         "--num-envs", type=int, default=1, help="Number of envs run in parallel."
@@ -136,7 +158,7 @@ def main():
         help="Weight initialization scale of policy output.",
     )
     parser.add_argument(
-        "--lr", type=float, default=3e-5, help="Learning rate."
+        "--lr", type=float, default=3e-4, help="Learning rate."
     )
     parser.add_argument(
         "--update-interval", type=int , default=4, help = "Updating the neural network in every time steps."
@@ -176,12 +198,12 @@ def main():
         # Cast observations to float32 because our model uses float32
         # env = pfrl.wrappers.CastObservationToFloat32(env)
         #Scaling Rewards
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
-        # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, 0, 1))
-        # if args.monitor:
-        #     env = pfrl.wrappers.Monitor(env, args.outdir)
-        # if args.render:
-        #     env = pfrl.wrappers.Render(env)
+        if(args.reward == "reward_gym"):
+            env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+            env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+        else: 
+            print("Using Min-Max Normalization")
+            env = NormalizeReward(env, gamma=gamma)
         return env
 
     def make_batch_env(test):
@@ -202,7 +224,7 @@ def main():
 
     obs_size = 4
     c_action_size = 2
-    d_action_size = 3
+    d_action_size = 2
     if LooseVersion(torch.__version__) < LooseVersion("1.5.0"):
         raise Exception("This script requires a PyTorch version >= 1.5.0")
 
@@ -293,6 +315,7 @@ def main():
             state: Tensor of shape [batch, channels, height, width]
             action: Tensor of shape [batch, action_dim]
             """
+
             assert len(state_action) == 2
             state,action = state_action
             c_action, d_action = action 
@@ -343,10 +366,10 @@ def main():
         burnin_action_func=burnin_action_func,
         c_entropy_target=-c_action_size,
         d_entropy_target=-d_action_size,
-        temperature_optimizer_lr=3e-4,
+        temperature_optimizer_lr=1e-4,
         update_interval=args.update_interval,
         soft_update_tau=args.soft_update_tau,
-        max_grad_norm=0.5,
+        max_grad_norm=0.9,
     )
 
     if len(args.load) > 0 or args.load_pretrained:
