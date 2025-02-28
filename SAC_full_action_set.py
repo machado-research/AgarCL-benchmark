@@ -1,428 +1,438 @@
-# https://github.com/vwxyzjn/cleanrl/blob/master/cleanrl/sac_continuous_action.py
+"""A training script of Soft Actor-Critic on OpenAI Gym Mujoco environments.
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-from torch.distributions.categorical import Categorical
-from torch.distributions.normal import Normal
-from torch.distributions.multivariate_normal import MultivariateNormal
-from torch.utils.tensorboard import SummaryWriter
-
+This script follows the settings of https://arxiv.org/abs/1812.05905 as much
+as possible.
+"""
 import argparse
-from distutils.util import strtobool
-import collections
+import functools
+import logging
+import sys
+from distutils.version import LooseVersion
+
+import gymnasium as gym
 import numpy as np
-import gym
-from gym.wrappers import TimeLimit, Monitor
-# import pybullet_envs
-from gym.spaces import Discrete, Box, MultiBinary, MultiDiscrete, Space
-import time
-import random
+import torch
+from torch import distributions, nn
+
+import pfrl
+from pfrl import experiments, replay_buffers, utils
+from pfrl.nn.lmbda import Lambda
+from pfrl.initializers import init_chainer_default
+
+import gym_agario
+import os
+import json
 import os
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='SAC with 2 Q functions, Online updates')
-    # Common arguments
-    parser.add_argument('--exp-name',
-                        type=str,
-                        default=os.path.basename(__file__).rstrip(".py"),
-                        help='the name of this experiment')
-    parser.add_argument('--gym-id', type=str, default="HopperBulletEnv-v0", help='the id of the gym environment')
-    parser.add_argument('--learning-rate', type=float, default=7e-4, help='the learning rate of the optimizer')
-    parser.add_argument('--seed', type=int, default=2, help='seed of the experiment')
-    parser.add_argument('--episode-length', type=int, default=0, help='the maximum length of each episode')
-    parser.add_argument('--total-timesteps', type=int, default=4000000, help='total timesteps of the experiments')
-    parser.add_argument('--torch-deterministic',
-                        type=lambda x: bool(strtobool(x)),
-                        default=True,
-                        nargs='?',
-                        const=True,
-                        help='if toggled, `torch.backends.cudnn.deterministic=False`')
-    parser.add_argument('--cuda',
-                        type=lambda x: bool(strtobool(x)),
-                        default=True,
-                        nargs='?',
-                        const=True,
-                        help='if toggled, cuda will not be enabled by default')
-    parser.add_argument('--prod-mode',
-                        type=lambda x: bool(strtobool(x)),
-                        default=False,
-                        nargs='?',
-                        const=True,
-                        help='run the script in production mode and use wandb to log outputs')
-    parser.add_argument('--capture-video',
-                        type=lambda x: bool(strtobool(x)),
-                        default=False,
-                        nargs='?',
-                        const=True,
-                        help='weather to capture videos of the agent performances (check out `videos` folder)')
-    parser.add_argument('--wandb-project-name', type=str, default="cleanRL", help="the wandb's project name")
-    parser.add_argument('--wandb-entity', type=str, default=None, help="the entity (team) of wandb's project")
-    parser.add_argument('--autotune',
-                        type=lambda x: bool(strtobool(x)),
-                        default=True,
-                        nargs='?',
-                        const=True,
-                        help='automatic tuning of the entropy coefficient.')
+class MultiActionWrapper(gym.ActionWrapper):
+    def __init__(self, env):
+        super().__init__(env)
 
-    # Algorithm specific arguments
-    parser.add_argument('--buffer-size', type=int, default=100000, help='the replay memory buffer size')
-    parser.add_argument('--gamma', type=float, default=0.99, help='the discount factor gamma')
+        self.action_space = gym.spaces.Tuple((
+            # (dx, dy) movemment vector
+            gym.spaces.Box(low=-1, high=1, shape=(2,)),
+            # 0=noop  1=feed  2=split
+            gym.spaces.Discrete(2),
+        ))
+
+    def action(self, action):
+        return action  # no-op on the second action
+
+class ObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
+
+    def observation(self, observation):
+        return observation[0].transpose(2, 0, 1).astype(np.uint8)
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        return obs[0].transpose(2, 0, 1).astype(np.uint8), info
+
+class NormalizeReward(gym.RewardWrapper):
+    #MIN-MAX Normalization
+    def __init__(self, env, gamma=0.99):
+        super().__init__(env)
+        self.r_min = -1.0
+        self.r_max = 1.0
+        self.epsilon = 1e-8  # Small value to prevent division by zero
+    
+    def reward(self, reward):
+        """Normalize reward to [-1, 1] range."""
+        if self.r_max - self.r_min < self.epsilon:
+            return 0.0  # Avoid division by zero, return neutral reward
+        # print("REWARD: ", reward)
+        r = (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon)
+        # r = 2 * (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon) - 1
+        return r
+
+def main():
+    assert torch.cuda.is_available(), "torch.cuda must be available. Aborting."
+    
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print("Device: ", device)
+    parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--target-network-frequency',
-        type=int,
-        default=1,  # Denis Yarats' implementation delays this by 2.
-        help="the timesteps it takes to update the target network")
-    parser.add_argument('--max-grad-norm', type=float, default=0.5, help='the maximum norm for the gradient clipping')
+        "--outdir",
+        type=str,
+        default="SAC_results_Exp4",
+        help=(
+            "Directory path to save output files."
+            " If it does not exist, it will be created."
+        ),
+    )
     parser.add_argument(
-        '--batch-size',
+        "--env",
+        type=str,
+        default="agario-screen-v0",
+        help="AgarIO",
+    )
+    parser.add_argument(
+    "--reward", 
+    type=str, 
+    default = "reward_gym", #min-max, reward_gym     
+    help="REWARD TYPE"
+    )
+    parser.add_argument(
+        "--num-envs", type=int, default=1, help="Number of envs run in parallel."
+    )
+    parser.add_argument("--seed", type=int, default=0, help="Random seed [0, 2 ** 32)")
+    parser.add_argument(
+        "--gpu", type=int, default=0, help="GPU to use, set to -1 if no GPU."
+    )
+    parser.add_argument(
+        "--load", type=str, default="", help="Directory to load agent from."
+    )
+    parser.add_argument(
+        "--steps",
         type=int,
-        default=128,  # Worked better in my experiments, still have to do ablation on this. Please remind me
-        help="the batch size of sample from the reply memory")
-    parser.add_argument('--tau', type=float, default=0.01, help="target smoothing coefficient (default: 0.005)")
-    parser.add_argument('--alpha', type=float, default=0.2, help="Entropy regularization coefficient.")
-    parser.add_argument('--learning-starts', type=int, default=1e4, help="timestep to start learning")
-
-    # Additional hyper parameters for tweaks
-    ## Separating the learning rate of the policy and value commonly seen: (Original implementation, Denis Yarats)
-    parser.add_argument('--policy-lr',
-                        type=float,
-                        default=3e-5,
-                        help='the learning rate of the policy network optimizer')
-    parser.add_argument('--q-lr', type=float, default=3e-5, help='the learning rate of the Q network network optimizer')
-    parser.add_argument('--policy-frequency',
-                        type=int,
-                        default=1,
-                        help='delays the update of the actor, as per the TD3 paper.')
-    # NN Parameterization
-    parser.add_argument('--weights-init',
-                        default='kaiming',
-                        const='kaiming',
-                        nargs='?',
-                        choices=['xavier', "orthogonal", 'uniform', 'kaiming'],
-                        help='weight initialization scheme for the neural networks.')
-    parser.add_argument('--bias-init',
-                        default='zeros',
-                        const='xavier',
-                        nargs='?',
-                        choices=['zeros', 'uniform'],
-                        help='weight initialization scheme for the neural networks.')
-    parser.add_argument('--ent-c',
-                        default=-0.99,
-                        type=float,
-                        help='target entropy of continuous component.')
-    parser.add_argument('--ent-d',
-                        default=0.1498,
-                        type=float,
-                        help='target entropy of discrete component.')
-
+        default= 2 * 10**6,
+        help="Total number of timesteps to train the agent.",
+    )
+    parser.add_argument(
+        "--eval-n-runs",
+        type=int,
+        default=1,
+        help="Number of episodes run for each evaluation.",
+    )
+    parser.add_argument(
+        "--eval-interval",
+        type=int,
+        default=50000,
+        help="Interval in timesteps between evaluations.",
+    )
+    parser.add_argument(
+        "--replay-start-size",
+        type=int,
+        default=10000,
+        help="Minimum replay buffer size before " + "performing gradient updates.",
+    )
+    parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
+    parser.add_argument(
+        "--render", action="store_true", help="Render env states in a GUI window."
+    )
+    parser.add_argument(
+        "--demo", action="store_true", help="Just run evaluation, not training."
+    )
+    parser.add_argument("--load-pretrained", action="store_true", default=False)
+    parser.add_argument(
+        "--pretrained-type", type=str, default="best", choices=["best", "final"]
+    )
+    parser.add_argument(
+        "--monitor", action="store_true", help="Wrap env with gym.wrappers.Monitor."
+    )
+    parser.add_argument(
+        "--log-interval",
+        type=int,
+        default=500,
+        help="Interval in timesteps between outputting log messages during training",
+    )
+    parser.add_argument(
+        "--log-level", type=int, default=logging.INFO, help="Level of the root logger."
+    )
+    parser.add_argument(
+        "--policy-output-scale",
+        type=float,
+        default=1.0,
+        help="Weight initialization scale of policy output.",
+    )
+    parser.add_argument(
+        "--lr", type=float, default=3e-4, help="Learning rate."
+    )
+    parser.add_argument(
+        "--update-interval", type=int , default=4, help = "Updating the neural network in every time steps."
+    )
+    parser.add_argument(
+        "--replay-buffer", type=int, default=int(1e5), help="Replay Buffer."
+    )
+    parser.add_argument(
+        "--soft-update-tau",
+        type=float,
+        default=0.01,
+        help="Coefficient for soft update of the target network.",
+    )
+    
     args = parser.parse_args()
-    if not args.seed:
-        args.seed = int(time.time())
 
-# TRY NOT TO MODIFY: setup the environment
-experiment_name = f"{args.gym_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
-writer = SummaryWriter(f"runs/{experiment_name}")
-writer.add_text('hyperparameters',
-                "|param|value|\n|-|-|\n%s" % ('\n'.join([f"|{key}|{value}|" for key, value in vars(args).items()])))
-if args.prod_mode:
-    import wandb
-    wandb.init(project=args.wandb_project_name,
-               entity=args.wandb_entity,
-               sync_tensorboard=True,
-               config=vars(args),
-               name=experiment_name,
-               monitor_gym=True,
-               save_code=True)
-    writer = SummaryWriter(f"/tmp/{experiment_name}")
+    logging.basicConfig(level=args.log_level)
 
-# TRY NOT TO MODIFY: seeding
-device = torch.device('cuda' if torch.cuda.is_available() and args.cuda else 'cpu')
-env = gym.make('Goal-v0')
+    args.outdir = experiments.prepare_output_dir(args, args.outdir, argv=sys.argv)
+    print("Output files are saved in {}".format(args.outdir))
 
-random.seed(args.seed)
-np.random.seed(args.seed)
-torch.manual_seed(args.seed)
-torch.backends.cudnn.deterministic = args.torch_deterministic
-env.seed(args.seed)
-env.action_space.seed(args.seed)
-env.observation_space.seed(args.seed)
-input_shape = 17
-out_c = 4
-out_d = 3
-if args.capture_video:
-    env = Monitor(env, f'videos/{experiment_name}')
+    # Set a random seed used in PFRL
+    utils.set_random_seed(args.seed)
+    env_config = json.load(open('env_config.json', 'r'))
+    def make_env(process_idx, test):
 
-# ALGO LOGIC: initialize agent here:
-LOG_STD_MAX = 0.0
-LOG_STD_MIN = -5.0
-
-
-def layer_init(layer, weight_gain=1, bias_const=0):
-    if isinstance(layer, nn.Linear):
-        if args.weights_init == "xavier":
-            torch.nn.init.xavier_uniform_(layer.weight, gain=weight_gain)
-        elif args.weights_init == "orthogonal":
-            torch.nn.init.orthogonal_(layer.weight, gain=weight_gain)
-        elif args.weights_init == "kaiming":
-            nn.init.kaiming_normal_(layer.weight, nonlinearity='relu')
-        if args.bias_init == "zeros":
-            torch.nn.init.constant_(layer.bias, bias_const)
-
-
-class Policy(nn.Module):
-    def __init__(self, input_shape, out_c, out_d, env):
-        super(Policy, self).__init__()
-        self.fc1 = nn.Linear(input_shape, 256)
-        self.mean = nn.Linear(256, out_c)
-        self.logstd = nn.Linear(256, out_c)
-
-        self.pi_d = nn.Linear(256, out_d)
-
-        self.apply(layer_init)
-
-    def forward(self, x, device):
-        x = torch.Tensor(x).to(device)
-
-        x = torch.relu(self.fc1(x))
-        mean = torch.tanh(self.mean(x))
-        log_std = self.logstd(x)
-        pi_d = self.pi_d(x)
-        log_std = torch.tanh(log_std)
-        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (log_std + 1)  # From SpinUp / Denis Yarats
-
-        return mean, log_std, pi_d
-
-    def get_action(self, x, device):
-        mean, log_std, pi_d = self.forward(x, device)
-        std = log_std.exp()
-
-        normal = Normal(mean, std)
-        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
-        action_c = torch.tanh(x_t)
-        all_log_prob_c = normal.log_prob(x_t)
-        all_log_prob_c -= torch.log(1.0 - action_c.pow(2) + 1e-8)
-        log_prob_c = torch.cat([all_log_prob_c[:, :2].sum(1, keepdim=True), all_log_prob_c[:, 2:]], 1)
-
-        dist = Categorical(logits=pi_d)
-        action_d = dist.sample()
-        prob_d = dist.probs
-        log_prob_d = torch.log(prob_d + 1e-8)
-
-        return action_c, action_d, log_prob_c, log_prob_d, prob_d
-
-    def to(self, device):
-        return super(Policy, self).to(device)
-
-class Linear0(nn.Linear):
-    def reset_parameters(self):
-        nn.init.constant_(self.weight, 0.0)
-        if self.bias is not None:
-            nn.init.constant_(self.bias, 0.0)
-
-class SoftQNetwork(nn.Module):
-    def __init__(self, input_shape, out_c, out_d, layer_init):
-        super(SoftQNetwork, self).__init__()
-        self.fc1 = nn.Linear(input_shape + out_c, 256)
-        self.fc2 = nn.Linear(256, out_d)
-        self.apply(layer_init)
-
-    def forward(self, x, a, device):
-        x = torch.Tensor(x).to(device)
-        x = torch.cat([x, a], 1)
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
-
-# modified from https://github.com/seungeunrho/minimalRL/blob/master/dqn.py#
-class ReplayBuffer():
-    def __init__(self, buffer_limit):
-        self.buffer = collections.deque(maxlen=buffer_limit)
-
-    def put(self, transition):
-        self.buffer.append(transition)
-
-    def sample(self, n):
-        mini_batch = random.sample(self.buffer, n)
-        s_lst, a_lst, r_lst, s_prime_lst, done_mask_lst = [], [], [], [], []
-
-        for transition in mini_batch:
-            s, a, r, s_prime, done_mask = transition
-            s_lst.append(s)
-            a_lst.append(a)
-            r_lst.append(r)
-            s_prime_lst.append(s_prime)
-            done_mask_lst.append(done_mask)
-
-        return np.array(s_lst), np.array(a_lst), \
-               np.array(r_lst), np.array(s_prime_lst), \
-               np.array(done_mask_lst)
-
-
-rb = ReplayBuffer(args.buffer_size)
-pg = Policy(input_shape, out_c, out_d, env).to(device)
-qf1 = SoftQNetwork(input_shape, out_c, out_d, layer_init).to(device)
-qf2 = SoftQNetwork(input_shape, out_c, out_d, layer_init).to(device)
-qf1_target = SoftQNetwork(input_shape, out_c, out_d, layer_init).to(device)
-qf2_target = SoftQNetwork(input_shape, out_c, out_d, layer_init).to(device)
-qf1_target.load_state_dict(qf1.state_dict())
-qf2_target.load_state_dict(qf2.state_dict())
-values_optimizer = optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=args.q_lr)
-policy_optimizer = optim.Adam(list(pg.parameters()), lr=args.policy_lr)
-loss_fn = nn.MSELoss()
-
-# Automatic entropy tuning
-if args.autotune:
-    target_entropy = args.ent_c
-    log_alpha = torch.zeros(1, requires_grad=True, device=device)
-    alpha = log_alpha.exp().detach().cpu().item()
-    a_optimizer = optim.Adam([log_alpha], lr=1e-4)
-
-    target_entropy_d = args.ent_d
-    log_alpha_d = torch.zeros(1, requires_grad=True, device=device)
-    alpha_d = log_alpha_d.exp().detach().cpu().item()
-    a_d_optimizer = optim.Adam([log_alpha_d], lr=1e-4)
-else:
-    alpha = args.alpha
-    alpha_d = args.alpha
-
-# TRY NOT TO MODIFY: start the game
-global_episode = 0
-num_goals = 0
-(obs, _), done = env.reset(), False
-episode_reward, episode_length = 0., 0
-
-
-for global_step in range(1, args.total_timesteps + 1):
-    # ALGO LOGIC: put action logic here
-    if global_step < args.learning_starts:
-        action_ = env.action_space.sample()
-        action_ = gym_to_buffer(action_)
-        action = [action_[0], action_[1:]]
-    else:
-        action_c, action_d, _, _, _ = pg.get_action([obs], device)
-        action = to_gym_action(action_c, action_d)
-
-    # TRY NOT TO MODIFY: execute the game and log data.
-    (next_obs, _), reward, done, _ = env.step(action)
-    rb.put((obs, gym_to_buffer(action), reward/50.0, next_obs, done))
-    episode_reward += reward
-    episode_length += 1
-    obs = np.array(next_obs)
-
-    # ALGO LOGIC: training.
-    if len(rb.buffer) > args.batch_size:  # starts update as soon as there is enough data.
-        s_obs, s_actions, s_rewards, s_next_obses, s_dones = rb.sample(args.batch_size)
-        with torch.no_grad():
-            next_state_actions_c, next_state_actions_d, next_state_log_pi_c, next_state_log_pi_d, next_state_prob_d = pg.get_action(s_next_obses, device)
-            qf1_next_target = qf1_target.forward(s_next_obses, next_state_actions_c, device)
-            qf2_next_target = qf2_target.forward(s_next_obses, next_state_actions_c, device)
-
-            min_qf_next_target = next_state_prob_d * (torch.min(qf1_next_target, qf2_next_target) - alpha * next_state_prob_d * next_state_log_pi_c - alpha_d * next_state_log_pi_d)
-            next_q_value = torch.Tensor(s_rewards).to(
-                device) + (1 - torch.Tensor(s_dones).to(device)) * args.gamma * (min_qf_next_target.sum(1)).view(-1)
-
-        s_actions_c, s_actions_d = to_torch_action(s_actions, device)
-        qf1_a_values = qf1.forward(s_obs, s_actions_c, device).gather(1, s_actions_d.long().view(-1, 1).to(device)).squeeze().view(-1)
-        qf2_a_values = qf2.forward(s_obs, s_actions_c, device).gather(1, s_actions_d.long().view(-1, 1).to(device)).squeeze().view(-1)
-        qf1_loss = loss_fn(qf1_a_values, next_q_value)
-        qf2_loss = loss_fn(qf2_a_values, next_q_value)
-        qf_loss = (qf1_loss + qf2_loss) / 2
-
-        values_optimizer.zero_grad()
-        qf_loss.backward()
-        values_optimizer.step()
-
-        if global_step % args.policy_frequency == 0:  # TD 3 Delayed update support
-            for _ in range(
-                    args.policy_frequency):  # compensate for the delay by doing 'actor_update_interval' instead of 1
-                actions_c, actions_d, log_pi_c, log_pi_d, prob_d = pg.get_action(s_obs, device)
-                qf1_pi = qf1.forward(s_obs, actions_c, device)
-                qf2_pi = qf2.forward(s_obs, actions_c, device)
-                min_qf_pi = torch.min(qf1_pi, qf2_pi)
-
-                policy_loss_d = (prob_d * (alpha_d * log_pi_d - min_qf_pi)).sum(1).mean()
-                policy_loss_c = (prob_d * (alpha * prob_d * log_pi_c - min_qf_pi)).sum(1).mean()
-                policy_loss = policy_loss_d + policy_loss_c
-
-                policy_optimizer.zero_grad()
-                policy_loss.backward()
-                policy_optimizer.step()
-
-                if args.autotune:
-                    with torch.no_grad():
-                        a_c, a_d, lpi_c, lpi_d, p_d = pg.get_action(s_obs, device)
-                    alpha_loss = (-log_alpha * p_d * (p_d * lpi_c + target_entropy)).sum(1).mean()
-                    alpha_d_loss = (-log_alpha_d * p_d * (lpi_d + target_entropy_d)).sum(1).mean()
-
-                    a_optimizer.zero_grad()
-                    alpha_loss.backward()
-                    a_optimizer.step()
-                    alpha = log_alpha.exp().item()
-
-                    a_d_optimizer.zero_grad()
-                    alpha_d_loss.backward()
-                    a_d_optimizer.step()
-                    alpha_d = log_alpha_d.exp().item()
-
-        # update the target network
-        if global_step % args.target_network_frequency == 0:
-            for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
-                target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-            for param, target_param in zip(qf2.parameters(), qf2_target.parameters()):
-                target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
-
-    if len(rb.buffer) > args.batch_size and global_step % 100 == 0:
-        writer.add_scalar("losses/soft_q_value_1_loss", qf1_loss.item(), global_step)
-        writer.add_scalar("losses/soft_q_value_2_loss", qf2_loss.item(), global_step)
-        writer.add_scalar("losses/qf_loss", qf_loss.item(), global_step)
-        writer.add_scalar("losses/policy_loss", policy_loss.item(), global_step)
-        writer.add_scalar("losses/alpha", alpha, global_step)
-        # NOTE: additional changes from cleanrl
-        writer.add_scalar("losses/alpha_d", alpha_d, global_step)
-        writer.add_histogram("actions/discrete", action[0]+1, global_step)
-        writer.add_histogram("actions_c/kick_x", action[1][0], global_step)
-        writer.add_histogram("actions_c/kick_y", action[1][1], global_step)
-        writer.add_histogram("actions_c/shoot_up", action[1][2], global_step)
-        writer.add_histogram("actions_c/shoot_down", action[1][3], global_step)
-        writer.add_scalar("debug/ent_bonus", (- alpha * next_state_prob_d * next_state_log_pi_c - alpha_d * next_state_log_pi_d).sum(1).mean().item(), global_step)
-        writer.add_scalar("debug/policy_loss_c", policy_loss_c.item(), global_step)
-        writer.add_scalar("debug/policy_loss_d", policy_loss_d.item(), global_step)
-        writer.add_scalar("debug/policy_ent_d", -(prob_d*log_pi_d).sum(1).mean().item(), global_step)
-        writer.add_scalar("debug/mean_q", min_qf_pi.mean().item(), global_step)
-        writer.add_scalar("debug/mean_r", s_rewards.mean(), global_step)
-        writer.add_histogram("debug_q/q_0", min_qf_pi[:, 0].mean().item(), global_step)
-        writer.add_histogram("debug_q/q_1", min_qf_pi[:, 1].mean().item(), global_step)
-        writer.add_histogram("debug_q/q_2", min_qf_pi[:, 2].mean().item(), global_step)
-        writer.add_histogram("debug_pi/pi_0", prob_d[:, 0].mean().item(), global_step)
-        writer.add_histogram("debug_pi/pi_1", prob_d[:, 1].mean().item(), global_step)
-        writer.add_histogram("debug_pi/pi_2", prob_d[:, 2].mean().item(), global_step)
-        if args.autotune:
-            writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
-            writer.add_scalar("losses/alpha_d_loss", alpha_d_loss.item(), global_step)
-
-    if done:
-        global_episode += 1  # Outside the loop already means the epsiode is done
-        writer.add_scalar("charts/episode_reward", episode_reward, global_step)
-        writer.add_scalar("charts/episode_length", episode_length, global_step)
-        # Terminal verbosity
-        if global_episode % 10 == 0:
-            print(f"Episode: {global_episode} Step: {global_step}, Ep. Reward: {episode_reward}")
-
-        # NOTE: P(Goal) calculation
-        if int(reward) == 50:
-            num_goals += 1
-        if global_episode % 100 == 0:
-            writer.add_scalar("charts/p_goal", num_goals/100, global_step)
-            num_goals = 0
         
-        # Reseting what need to be
-        (obs, _), done = env.reset(), False
-        episode_reward, episode_length = 0., 0
+        env = gym.make(args.env, **env_config)
+        gamma  = 0.99
+        # Use different random seeds for train and test envs
+        # env_seed = (2**32 - 1 - process_seed if test else process_seed) % (2**32)
+        env.seed(args.seed)
+        env = MultiActionWrapper(env)
+        env = ObservationWrapper(env)
+        # env = gym.wrappers.ClipAction(env)
+        # env = gym.wrappers.flatten_observation.FlattenObservation(env)
+        # Cast observations to float32 because our model uses float32
+        # env = pfrl.wrappers.CastObservationToFloat32(env)
+        #Scaling Rewards
+        if(args.reward == "reward_gym"):
+            env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+            env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+        else: 
+            print("Using Min-Max Normalization")
+            env = NormalizeReward(env, gamma=gamma)
+        return env
 
-writer.close()
-env.close()
+    def make_batch_env(test):
+        return make_env(0, test)
+        # return pfrl.envs.MultiprocessVectorEnv(
+        #     [
+        #         functools.partial(make_env, idx, test)
+        #         for idx, env in enumerate(range(args.num_envs))
+        #     ]
+        # )
 
-torch.save(pg.state_dict(), 'goal.pth')
+    sample_env = make_env(process_idx=0, test=False)
+    timestep_limit = sample_env.spec.max_episode_steps
+    obs_space = sample_env.observation_space
+    action_space = sample_env.action_space
+    print("Observation space:", obs_space)
+    print("Action space:", action_space)
+
+    obs_size = 4
+    c_action_size = 2
+    d_action_size = 2
+    if LooseVersion(torch.__version__) < LooseVersion("1.5.0"):
+        raise Exception("This script requires a PyTorch version >= 1.5.0")
+
+    def squashed_diagonal_gaussian_head(x):
+        assert x.shape[-1] == c_action_size * 2
+        mean, log_scale = torch.chunk(x, 2, dim=1)
+        log_scale = torch.clamp(log_scale, -20.0, 2.0)
+        var = torch.exp(log_scale * 2)
+        base_distribution = distributions.Independent(
+            distributions.Normal(loc=mean, scale=torch.sqrt(var)), 1
+        )
+        # cache_size=1 is required for numerical stability
+        return distributions.transformed_distribution.TransformedDistribution(
+            base_distribution, [distributions.transforms.TanhTransform(cache_size=1)]
+        )
+    
+    class CustomCNN(nn.Module):
+        def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
+            super().__init__()
+            self.n_input_channels = n_input_channels
+            self.activation = activation
+            self.n_output_channels = n_output_channels
+            self.layers = nn.ModuleList(
+                [
+                    nn.Conv2d(n_input_channels, 32, kernel_size=8, stride=4),
+                    nn.LayerNorm([32, 31, 31]),
+                    nn.Conv2d(32, 64, 4, stride=2),
+                    nn.LayerNorm([64, 14, 14]),
+                    nn.Conv2d(64, 32, 3, stride=1),
+                    nn.LayerNorm([32, 12, 12]),
+                ]
+            )
+            self.output = nn.Linear(4608, n_output_channels)  # Adjusted for 3x84x84 input
+
+            self.apply(init_chainer_default)
+            self.apply(self.constant_bias_initializer(bias=bias))
+
+        def constant_bias_initializer(self, bias=0.1):
+            def init(m):
+                if isinstance(m, nn.Linear):
+                    nn.init.constant_(m.bias, bias)
+            return init
+
+        def forward(self, state):
+            h = state
+            for layer in self.layers:
+                h = self.activation(layer(h))
+            h_flat = h.view(h.size(0), -1)
+            return self.activation(self.output(h_flat))
+
+    policy = nn.Sequential(
+        CustomCNN(n_input_channels=obs_size, n_output_channels=256),
+        nn.ReLU(),
+        pfrl.nn.Branched(
+            #continuous actions
+            nn.Sequential(
+                init_chainer_default(nn.Linear(256, c_action_size * 2)),
+                Lambda(squashed_diagonal_gaussian_head),
+            ),
+            #Discrete actions
+            nn.Sequential(
+                init_chainer_default(nn.Linear(256, d_action_size)),
+                pfrl.policies.SoftmaxCategoricalHead(),
+            )
+        )
+    )
+
+    policy_optimizer = torch.optim.Adam(policy.parameters(), lr=args.lr)
+
+    class SoftQNetwork(nn.Module):
+        def __init__(self, image_channels,device, c_action_dim = 2, d_action_dim = 3, feature_dim=64):
+            super(SoftQNetwork, self).__init__()
+            self.d_action_dim = d_action_dim
+            self.device = device
+            # Convolutional layers for image encoding
+            self.conv = nn.Sequential(
+                CustomCNN(n_input_channels=image_channels, n_output_channels=256),
+                nn.ReLU(),
+            )
+            conv_output_size = 256
+            
+            # Fully connected layers that combine the flattened conv features and action
+            self.fc1 = init_chainer_default(nn.Linear(conv_output_size + c_action_dim, feature_dim))
+            self.fc2 = init_chainer_default(nn.Linear(feature_dim, d_action_dim))  # Output a single Q-value
+
+        def forward(self, state_action):
+            """
+            state: Tensor of shape [batch, channels, height, width]
+            action: Tensor of shape [batch, action_dim]
+            """
+
+            assert len(state_action) == 2
+            state,action = state_action
+            c_action, d_action = action 
+            conv_out = self.conv(state)
+            conv_out = conv_out.view(conv_out.size(0), -1)
+            x = torch.cat([conv_out, c_action], dim=-1)  # [batch, conv_features + action_dim]
+            x = self.fc1(x)
+            x = nn.ReLU()(x)
+            q_values = self.fc2(x)  # [batch, 3]
+            q_value = q_values.gather(1, d_action.long().view(-1, 1).to(self.device)).squeeze().view(-1)
+            return q_value
+
+    def make_q_func_with_optimizer():
+        q_func = SoftQNetwork(image_channels=obs_size, device=device, c_action_dim=c_action_size, d_action_dim=d_action_size)
+        
+        q_func_optimizer = torch.optim.Adam(q_func.parameters(), lr=args.lr)
+        return q_func, q_func_optimizer
+
+    q_func1, q_func1_optimizer = make_q_func_with_optimizer()
+    q_func2, q_func2_optimizer = make_q_func_with_optimizer()
+
+    rbuf = replay_buffers.ReplayBuffer(args.replay_buffer)
+
+    def burnin_action_func():
+        """Select random actions until model is updated one or more times."""
+        return (
+            np.random.uniform(action_space[0].low, action_space[0].high).astype(np.float32),
+            np.random.randint(action_space[1].n)
+        )
+
+    def phi(x):
+        # Feature extractor
+        return np.asarray(x, dtype=np.float32) / 255
+    # Hyperparameters in http://arxiv.org/abs/1802.09477
+    agent = pfrl.agents.HybridSoftActorCritic(
+        policy,
+        q_func1,
+        q_func2,
+        policy_optimizer,
+        q_func1_optimizer,
+        q_func2_optimizer,
+        rbuf,
+        gamma=0.99,
+        phi=phi,
+        replay_start_size=args.replay_start_size,
+        gpu=args.gpu,
+        minibatch_size=args.batch_size,
+        burnin_action_func=burnin_action_func,
+        c_entropy_target=-c_action_size,
+        d_entropy_target=-d_action_size,
+        temperature_optimizer_lr=1e-4,
+        update_interval=args.update_interval,
+        soft_update_tau=args.soft_update_tau,
+        max_grad_norm=0.9,
+    )
+
+    if len(args.load) > 0 or args.load_pretrained:
+        # either load or load_pretrained must be false
+        assert not len(args.load) > 0 or not args.load_pretrained
+        if len(args.load) > 0:
+            agent.load(args.load)
+        else:
+            agent.load(
+                utils.download_model("SAC", args.env, model_type=args.pretrained_type)[
+                    0
+                ]
+            )
+
+    if args.demo:
+        eval_stats = experiments.eval_performance(
+            env=make_batch_env(test=True),
+            agent=agent,
+            n_steps=None,
+            n_episodes=args.eval_n_runs,
+            max_episode_len=timestep_limit,
+        )
+        print(
+            "n_runs: {} mean: {} median: {} stdev {}".format(
+                args.eval_n_runs,
+                eval_stats["mean"],
+                eval_stats["median"],
+                eval_stats["stdev"],
+            )
+        )
+
+        with open(os.path.join(args.outdir, "demo_scores.json"), "w") as f:
+            json.dump(eval_stats, f)
+    else:
+        # experiments.train_agent_batch_with_evaluation(
+        #     agent=agent,
+        #     env=make_batch_env(test=False),
+        #     eval_env=make_batch_env(test=True),
+        #     outdir=args.outdir,
+        #     steps=args.steps,
+        #     eval_n_steps=None,
+        #     eval_n_episodes=args.eval_n_runs,
+        #     eval_interval=args.eval_interval,
+        #     log_interval=args.log_interval,
+        #     max_episode_len=timestep_limit,
+        # )
+        
+        experiments.train_agent_with_evaluation(
+            agent=agent,
+            env=make_batch_env(False),
+            eval_env=make_batch_env(True),
+            steps=args.steps,
+            eval_n_steps=None,
+            eval_n_episodes=args.eval_n_runs,
+            eval_interval=args.eval_interval,
+            outdir=args.outdir,
+            save_best_so_far_agent=True,
+            checkpoint_freq = 100000,
+            # log_interval=args.log_interval,
+             train_max_episode_len=timestep_limit,
+             eval_max_episode_len=timestep_limit,
+        )
+
+
+if __name__ == "__main__":
+    main()
