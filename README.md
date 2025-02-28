@@ -1,7 +1,5 @@
 # AgarLE Benchmarking
-
-### Installation of the environment
-
+# NEED TO CHANGE ..... This one is out-dated.
 #### Step 1: Add the submodules
 ```
 git submodule init
