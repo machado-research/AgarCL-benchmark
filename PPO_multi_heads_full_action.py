@@ -35,7 +35,7 @@ class MultiActionWrapper(gym.ActionWrapper):
             # (dx, dy) movemment vector
             gym.spaces.Box(low=-1, high=1, shape=(2,)),
             # 0=noop  1=split  2=feed
-            gym.spaces.Discrete(2),
+            gym.spaces.Discrete(3),
         ))
 
     def action(self, action):
@@ -53,6 +53,22 @@ class ObservationWrapper(gym.ObservationWrapper):
         obs, info = self.env.reset(**kwargs)
         return obs[0].transpose(2, 0, 1), info
 
+class NormalizeReward(gym.RewardWrapper):
+    #MIN-MAX Normalization
+    def __init__(self, env, gamma=0.99):
+        super().__init__(env)
+        self.r_min = -1.0
+        self.r_max = 1.0
+        self.epsilon = 1e-8  # Small value to prevent division by zero
+    
+    def reward(self, reward):
+        """Normalize reward to [-1, 1] range."""
+        if self.r_max - self.r_min < self.epsilon:
+            return 0.0  # Avoid division by zero, return neutral reward
+        # print("REWARD: ", reward)
+        r = (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon)
+        # r = 2 * (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon) - 1
+        return r
 
 def main():
     import logging
@@ -68,13 +84,19 @@ def main():
         help="AgarIO",
     )
     parser.add_argument(
+    "--reward", 
+    type=str, 
+    default = "min_max", #min-max, reward_gym     
+    help="REWARD TYPE"
+    )
+    parser.add_argument(
         "--num-envs", type=int, default=1, help="Number of envs run in parallel."
     )
     parser.add_argument("--seed", type=int, default=10, help="Random seed [0, 2 ** 32)")
     parser.add_argument(
         "--outdir",
         type=str,
-        default="PPO_Multi_Head_results_Exp3",
+        default="/home/mayman/Results/PPO_Multi_Head_results_Exp4_n",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -83,7 +105,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 2 * 10**6,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -134,22 +156,22 @@ def main():
     )
 
     parser.add_argument(
-        "--clip-eps", type=float, default=0.4, help="Clipping parameter for PPO.")
+        "--clip-eps", type=float, default=0.2, help="Clipping parameter for PPO.")
 
     parser.add_argument(
-        "--entropy-coef", type=float, default=0.001, help="Entropy coefficient for PPO.")
+        "--entropy-coef", type=float, default=0.01, help="Entropy coefficient for PPO.")
 
     parser.add_argument(
         "--clip-eps-vf", type=float, default=0.2, help="Clipping parameter for the value function.")
 
     parser.add_argument(
-        "--value-func-coef", type=float, default=0.7, help="Value function coefficient for PPO.")
+        "--value-func-coef", type=float, default=0.9, help="Value function coefficient for PPO.")
 
     parser.add_argument(
-        "--max-grad-norm", type=float, default=0.9, help="Maximum norm of gradients.")
+        "--max-grad-norm", type=float, default=0.5, help="Maximum norm of gradients.")
 
     parser.add_argument(
-        "--lr", type=float, default=1e-5, help="The learning rate of the optimizer.")
+        "--lr", type=float, default=3e-5, help="The learning rate of the optimizer.")
 
 
     parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
@@ -181,8 +203,13 @@ def main():
         # env = gym.wrappers.flatten_observation.FlattenObservation(env)
         # Cast observations to float32 because our model uses float32
         env = pfrl.wrappers.CastObservationToFloat32(env)
-        #Scaling Rewards
-        env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+        #Scaling Rewards 
+        if(args.reward == "reward_gym"):
+            env = gym.wrappers.NormalizeReward(env, gamma=gamma)
+            env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
+        else: 
+            print("Using Min-Max Normalization")
+            env = NormalizeReward(env, gamma=gamma)
         # env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, 0, 1))
         # if args.monitor:
         #     env = pfrl.wrappers.Monitor(env, args.outdir)
@@ -255,7 +282,7 @@ def main():
     obs_size = obs_space.low.size
     # action_size = action_space.low.size
     continous_action_size = 2
-    discrete_action_size = 2
+    discrete_action_size = 3
 
     model = nn.Sequential(
         CustomCNN(n_input_channels=4, n_output_channels=256),
@@ -356,7 +383,7 @@ def main():
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=True,
-            checkpoint_freq = 50000,
+            checkpoint_freq = 500000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,

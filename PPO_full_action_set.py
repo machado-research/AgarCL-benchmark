@@ -94,7 +94,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="PPO_test",
+        default="/home/mayman/Results/PPO_results_Exp4_n",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -103,13 +103,13 @@ def main():
     parser.add_argument(
     "--reward", 
     type=str, 
-    default = "reward_gym", #min-max, reward_gym     
+    default = "min_max", #min-max, reward_gym     
     help="REWARD TYPE"
     )
     parser.add_argument(
         "--steps",
         type=int,
-        default= 2 * 10**6,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -163,16 +163,16 @@ def main():
         "--clip-eps", type=float, default=0.4, help="Clipping parameter for PPO.")
 
     parser.add_argument(
-        "--entropy-coef", type=float, default=0.001, help="Entropy coefficient for PPO.")
+        "--entropy-coef", type=float, default=0.05, help="Entropy coefficient for PPO.")
 
     parser.add_argument(
         "--clip-eps-vf", type=float, default=0.2, help="Clipping parameter for the value function.")
 
     parser.add_argument(
-        "--value-func-coef", type=float, default=0.7, help="Value function coefficient for PPO.")
+        "--value-func-coef", type=float, default=0.9, help="Value function coefficient for PPO.")
 
     parser.add_argument(
-        "--max-grad-norm", type=float, default=0.9, help="Maximum norm of gradients.")
+        "--max-grad-norm", type=float, default=0.5, help="Maximum norm of gradients.")
 
     parser.add_argument(
         "--lr", type=float, default=1e-5, help="The learning rate of the optimizer.")
@@ -399,7 +399,7 @@ def main():
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=True,
-            checkpoint_freq = 50000,
+            checkpoint_freq = 500000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,

@@ -32,7 +32,7 @@ class MultiActionWrapper(gym.ActionWrapper):
             # (dx, dy) movemment vector
             gym.spaces.Box(low=-1, high=1, shape=(2,)),
             # 0=noop  1=feed  2=split
-            gym.spaces.Discrete(2),
+            gym.spaces.Discrete(3),
         ))
 
     def action(self, action):
@@ -76,7 +76,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="SAC_results_Exp4",
+        default="/home/mayman/Results/SAC_results_Exp4_noise",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -107,7 +107,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 2 * 10**6,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -158,7 +158,7 @@ def main():
         help="Weight initialization scale of policy output.",
     )
     parser.add_argument(
-        "--lr", type=float, default=3e-4, help="Learning rate."
+        "--lr", type=float, default=1e-5, help="Learning rate."
     )
     parser.add_argument(
         "--update-interval", type=int , default=4, help = "Updating the neural network in every time steps."
@@ -224,7 +224,7 @@ def main():
 
     obs_size = 4
     c_action_size = 2
-    d_action_size = 2
+    d_action_size = 3
     if LooseVersion(torch.__version__) < LooseVersion("1.5.0"):
         raise Exception("This script requires a PyTorch version >= 1.5.0")
 
@@ -427,7 +427,7 @@ def main():
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=True,
-            checkpoint_freq = 100000,
+            checkpoint_freq = 500000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,
