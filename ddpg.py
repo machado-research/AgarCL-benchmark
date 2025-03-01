@@ -41,11 +41,11 @@ class ObservationWrapper(gym.ObservationWrapper):
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self.observation_space.shape[3], self.observation_space.shape[1], self.observation_space.shape[2]), dtype=np.uint8)
 
     def observation(self, observation):
-        return observation[0].transpose(2, 0, 1)
+        return observation[0].transpose(2, 0, 1).astype(np.uint8)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        return obs[0].transpose(2, 0, 1), info
+        return obs[0].transpose(2, 0, 1).astype(np.uint8), info
     
 
 class NormalizeReward(gym.RewardWrapper):
@@ -98,13 +98,13 @@ def main():
     parser.add_argument(
         "--eval-n-runs",
         type=int,
-        default=10,
+        default=1,
         help="Number of episodes run for each evaluation.",
     )
     parser.add_argument(
         "--eval-interval",
         type=int,
-        default=5000,
+        default=500,
         help="Interval in timesteps between evaluations.",
     )
     parser.add_argument(
@@ -239,15 +239,15 @@ def main():
         SoftQNetwork(image_channels=obs_shape[0], action_dim=action_size),
     )
     policy = nn.Sequential(
-        CustomCNN(n_input_channels=obs_size, n_output_channels=256),
+        CustomCNN(n_input_channels=obs_shape[0], n_output_channels=256),
         nn.ReLU(),
         init_chainer_default(nn.Linear(256, action_size)),
         BoundByTanh(low=action_space.low, high=action_space.high),
         DeterministicHead(),
     )
 
-    opt_a = torch.optim.Adam(policy.parameters())
-    opt_c = torch.optim.Adam(q_func.parameters())
+    opt_a = torch.optim.Adam(policy.parameters() , lr = 1e-5)
+    opt_c = torch.optim.Adam(q_func.parameters(), lr = 1e-5)
 
     rbuf = replay_buffers.ReplayBuffer(10**5)
 
@@ -259,6 +259,9 @@ def main():
         """Select random actions until model is updated one or more times."""
         return np.random.uniform(action_space.low, action_space.high).astype(np.float32)
 
+    def phi(x):
+        # Feature extractor
+        return np.asarray(x, dtype=np.float32) / 255
     # Hyperparameters in http://arxiv.org/abs/1802.09477
     agent = DDPG(
         policy,
@@ -270,13 +273,14 @@ def main():
         explorer=explorer,
         replay_start_size=args.replay_start_size,
         target_update_method="soft",
-        target_update_interval=1,
-        update_interval=1,
-        soft_update_tau=5e-3,
+        target_update_interval=2,
+        update_interval=2,
+        soft_update_tau=0.01,
         n_times_update=1,
         gpu=args.gpu,
         minibatch_size=args.batch_size,
         burnin_action_func=burnin_action_func,
+        phi = phi
     )
 
     if len(args.load) > 0 or args.load_pretrained:
