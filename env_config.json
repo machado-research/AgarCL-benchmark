@@ -16,6 +16,9 @@
     "render_mode": "rgb_array",
     "allow_respawn": true,
     "reward_type": 1,
-    "c_death": -100,
-    "video_path": "screen_video.mp4"
+    "c_death": 0,
+    "video_path": "screen_video.mp4",
+    "add_noise"     : true,
+    "mode"          : 1, 
+    "agent_view"    : true
 }
