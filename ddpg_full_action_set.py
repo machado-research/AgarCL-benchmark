@@ -17,7 +17,8 @@ from torch import nn
 
 import pfrl
 from pfrl import experiments, explorers, replay_buffers, utils
-from pfrl.agents.ddpg import DDPG
+# from pfrl.agents.ddpg import DDPG
+from pfrl.agents.hybrid_ddpg import HybridDDPG
 from pfrl.nn import BoundByTanh, ConcatObsAndAction
 from pfrl.policies import DeterministicHead
 import os
@@ -30,10 +31,15 @@ class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
 
-        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,))  # (dx, dy) movement vector
+        self.action_space = gym.spaces.Tuple((
+            # (dx, dy) movemment vector
+            gym.spaces.Box(low=-1, high=1, shape=(2,)),
+            # 0=noop  1=feed  2=split
+            gym.spaces.Discrete(3),
+        ))
 
     def action(self, action):
-        return (action, 0)  # no-op on the second action
+        return action  # no-op on the second action
 
 class ObservationWrapper(gym.ObservationWrapper):
     def __init__(self, env):
@@ -92,7 +98,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default=10**6,
+        default=2 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -133,11 +139,11 @@ def main():
     parser.add_argument(
     "--reward", 
     type=str, 
-    default = "reward_gym", #min-max, reward_gym     
+    default = "min_max", #min-max, reward_gym     
     help="REWARD TYPE"
     )
     parser.add_argument(
-        "--lr", type=float, default=1e-5, help="Learning rate."
+        "--lr", type=float, default=3e-5, help="Learning rate."
     )
     parser.add_argument(
         "--target_update_interval", 
@@ -145,6 +151,33 @@ def main():
         default=4,
         help="Target network update interval"
     )
+    parser.add_argument(
+        "--update_interval",
+        type=int, 
+        default=4,
+        help="network update interval"
+    )
+    
+    parser.add_argument(
+        "--epochs", 
+        type=int,
+        default=1,
+        help="Number of epochs"
+    )
+    
+    parser.add_argument(
+        "--replay_buffer_size",
+        type=int,
+        default=10**5,
+        help="Replay Buffer Size"
+    )
+    parser.add_argument(
+        "--tau",
+        type=float,
+        default=5e-3,
+        help="Soft update tau"
+    )
+    
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
@@ -178,9 +211,14 @@ def main():
     print("Observation space:", obs_space)
     print("Action space:", action_space)
 
-    obs_size = obs_space.low.size
-    action_size = action_space.low.size
-    obs_shape = (obs_space.shape[0], obs_space.shape[1], obs_space.shape[2])
+    # obs_size = obs_space.low.size
+    # action_size = action_space.low.size
+    # obs_shape = (obs_space.shape[0], obs_space.shape[1], obs_space.shape[2])
+    
+    obs_size = 4
+    c_action_size = 2
+    d_action_size = 3
+
     class CustomCNN(nn.Module):
         def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
             super().__init__()
@@ -216,8 +254,10 @@ def main():
             return self.activation(self.output(h_flat))
     
     class SoftQNetwork(nn.Module):
-        def __init__(self, image_channels, action_dim, feature_dim=64):
+        def __init__(self, image_channels,device, c_action_dim = 2, d_action_dim = 3, feature_dim=64):
             super(SoftQNetwork, self).__init__()
+            self.d_action_dim = d_action_dim
+            self.device = device
             # Convolutional layers for image encoding
             self.conv = nn.Sequential(
                 CustomCNN(n_input_channels=image_channels, n_output_channels=256),
@@ -226,53 +266,67 @@ def main():
             conv_output_size = 256
             
             # Fully connected layers that combine the flattened conv features and action
-            self.fc1 = init_chainer_default(nn.Linear(conv_output_size + action_dim, feature_dim))
-            self.fc2 = init_chainer_default(nn.Linear(feature_dim, 1))  # Output a single Q-value
+            self.fc1 = init_chainer_default(nn.Linear(conv_output_size + c_action_dim, feature_dim))
+            self.fc2 = init_chainer_default(nn.Linear(feature_dim, d_action_dim))  # Output a single Q-value
 
         def forward(self, state_action):
             """
             state: Tensor of shape [batch, channels, height, width]
             action: Tensor of shape [batch, action_dim]
             """
+
             assert len(state_action) == 2
             state,action = state_action
+            c_action, d_action = action 
             conv_out = self.conv(state)
             conv_out = conv_out.view(conv_out.size(0), -1)
-            x = torch.cat([conv_out, action], dim=-1)  # [batch, conv_features + action_dim]
+            x = torch.cat([conv_out, c_action], dim=-1)  # [batch, conv_features + action_dim]
             x = self.fc1(x)
             x = nn.ReLU()(x)
-            q_value = self.fc2(x)  # [batch, 1]
+            q_values = self.fc2(x)  # [batch, 3]
+            q_value = q_values.gather(1, d_action.long().view(-1, 1).to(self.device)).squeeze().view(-1)
             return q_value
         
     q_func = nn.Sequential(
-        SoftQNetwork(image_channels=obs_shape[0], action_dim=action_size),
-    )
+            SoftQNetwork(image_channels=obs_size, device=args.gpu, c_action_dim=c_action_size, d_action_dim=d_action_size)
+        )
+    
     policy = nn.Sequential(
-        CustomCNN(n_input_channels=obs_shape[0], n_output_channels=256),
+        CustomCNN(n_input_channels=obs_size, n_output_channels=256),
         nn.ReLU(),
-        init_chainer_default(nn.Linear(256, action_size)),
-        BoundByTanh(low=action_space.low, high=action_space.high),
-        DeterministicHead(),
+        pfrl.nn.Branched(
+            nn.Sequential(
+                init_chainer_default(nn.Linear(256, c_action_size)),
+                BoundByTanh(low=action_space[0].low, high=action_space[0].high),
+                DeterministicHead()
+            ),
+            nn.Sequential(
+                init_chainer_default(nn.Linear(256, d_action_size)),
+                pfrl.policies.SoftmaxCategoricalHead(),
+            )
+        )
     )
 
-    opt_a = torch.optim.Adam(policy.parameters() , lr = 1e-5)
-    opt_c = torch.optim.Adam(q_func.parameters(), lr = 1e-5)
+    opt_a = torch.optim.Adam(policy.parameters() , lr = args.lr)
+    opt_c = torch.optim.Adam(q_func.parameters(), lr = args.lr)
 
-    rbuf = replay_buffers.ReplayBuffer(10**5)
-
+    rbuf = replay_buffers.ReplayBuffer(args.replay_buffer_size)
     explorer = explorers.AdditiveGaussian(
-        scale=0.1, low=action_space.low, high=action_space.high
+        scale=0.1, low=action_space[0].low, high=action_space[0].high
     )
 
     def burnin_action_func():
         """Select random actions until model is updated one or more times."""
-        return np.random.uniform(action_space.low, action_space.high).astype(np.float32)
+        return (
+            np.random.uniform(action_space[0].low, action_space[0].high).astype(np.float32),
+            np.random.randint(action_space[1].n)
+        )
 
     def phi(x):
         # Feature extractor
         return np.asarray(x, dtype=np.float32) / 255
     # Hyperparameters in http://arxiv.org/abs/1802.09477
-    agent = DDPG(
+    agent = HybridDDPG(
         policy,
         q_func,
         opt_a,
@@ -282,10 +336,10 @@ def main():
         explorer=explorer,
         replay_start_size=args.replay_start_size,
         target_update_method="soft",
-        target_update_interval=4,
-        update_interval=4,
-        soft_update_tau=5e-3,
-        n_times_update=1,
+        target_update_interval=args.target_update_interval,
+        update_interval=args.update_interval,
+        soft_update_tau=args.tau,
+        n_times_update=args.epochs,
         gpu=args.gpu,
         minibatch_size=args.batch_size,
         burnin_action_func=burnin_action_func,

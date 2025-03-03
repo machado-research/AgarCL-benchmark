@@ -8,8 +8,8 @@ import argparse
 import logging
 import sys
 
-import gym
-import gym.wrappers
+import gymnasium as gym
+import gym_agario
 import numpy as np
 import torch
 from torch import nn
@@ -17,6 +17,9 @@ from torch import nn
 import pfrl
 from pfrl import experiments, explorers, replay_buffers, utils
 
+from pfrl.initializers import init_chainer_default
+from torch import distributions, nn
+from pfrl.nn.lmbda import Lambda
 
 def main():
     parser = argparse.ArgumentParser()
