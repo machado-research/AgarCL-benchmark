@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="DQN_results_Exp3",
+        default="/home/mayman/Results/DQN_mode_2",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -188,18 +188,25 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 2 * 10**6,
+        default= 1 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
         "--replay-start-size",
         type=int,
-        default=5 * 10**3,
+        default=1 * 10**4,
         help="Minimum replay buffer size before " + "performing gradient updates.",
     )
     parser.add_argument("--eval-n-steps", type=int, default=500)
     parser.add_argument("--eval-interval", type=int, default=50000)
     parser.add_argument("--n-best-episodes", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=6.25e-5)
+    parser.add_argument("--target_update_interval", type=int, default=10**4)
+    parser.add_argument("--batch_accumulator", type=str, default="sum") #sum or mean
+    parser.add_argument("--minibatch_size", type=int, default=32) 
+    parser.add_argument("--tau", type=float, default=1e-2)
+    parser.add_argument("--epochs", type=int, default=1)
+
     args = parser.parse_args()
 
     import logging
@@ -263,7 +270,7 @@ def main():
     #     eps=1e-2,
     #     centered=True,
     # )
-    opt = torch.optim.Adam(q_func.parameters(), 6.25e-5, eps=1.5 * 10**-4)
+    opt = torch.optim.Adam(q_func.parameters(), args.lr , eps=1.5 * 10**-4)
 
     rbuf = replay_buffers.ReplayBuffer(100000)#1e5
 
@@ -287,10 +294,13 @@ def main():
         gamma=0.99,
         explorer=explorer,
         replay_start_size=args.replay_start_size,
-        target_update_interval=10**4,
+        target_update_interval=args.target_update_interval,
         clip_delta=True,
         update_interval=4,
-        batch_accumulator="sum",
+        batch_accumulator=args.batch_accumulator,
+        minibatch_size = args.minibatch_size,
+        soft_update_tau = args.tau,
+        n_times_update  = args.epochs,
         phi=phi,
     )
 
@@ -327,9 +337,9 @@ def main():
             eval_n_episodes=None,
             eval_interval=args.eval_interval,
             outdir=args.outdir,
-            save_best_so_far_agent=True,
+            save_best_so_far_agent=False,
             eval_env=eval_env,
-            checkpoint_freq = 100000,
+            checkpoint_freq = 10000000,
         )
 
         dir_of_best_network = os.path.join(args.outdir, "best")

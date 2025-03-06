@@ -9,9 +9,9 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=64GB
-#SBATCH --time=47:00:00
+#SBATCH --time=23:00:00
 #SBATCH --cpu-freq=Performance
-#SBATCH --array=1-10
+
 # module load apptainer
 # module --force purge 
 module load clang/17.0.6
@@ -27,11 +27,9 @@ export CXX=clang++
 export EGL_PLATFORM=surfaceless
 # Define the Singularity image
 
-seed=$SLURM_ARRAY_TASK_ID
-
 
 
 cd /home/mayman/projects/def-machado/mayman/agarle_bench/AgarLE-benchmark
 
 
-python PPO_multi_heads_full_action.py --reward "min_max" --lr 1e-5 --entropy-coef 0.05 --clip-eps 0.4 --value-func-coef 0.9 --max-grad-norm 0.5 --seed $seed --outdir "/home/mayman/Results/PPO_mode_2"
+python PPO_multi_heads_full_action.py --reward "min_max" --lr 1e-5 --entropy-coef 0.05 --clip-eps 0.4 --value-func-coef 0.9 --max-grad-norm 0.5  --outdir "/home/mayman/Results/PPO_mode_2"
