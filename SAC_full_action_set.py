@@ -24,6 +24,8 @@ import os
 import json
 import os
 
+import wandb
+
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -179,12 +181,21 @@ def main():
         help="Norm of max_grad",
     )
     
+    parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
+
+    
+    
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
 
     args.outdir = experiments.prepare_output_dir(args, args.outdir, argv=sys.argv)
     print("Output files are saved in {}".format(args.outdir))
+
+
+    if args.wandb:
+        wandb.init(project="agarle", name="SAC", config=vars(args))
+        wandb.config.update(args)
 
     # Set a random seed used in PFRL
     utils.set_random_seed(args.seed)

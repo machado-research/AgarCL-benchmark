@@ -14,7 +14,7 @@ from pfrl.q_functions import DiscreteActionValueHead
 import gym_agario
 
 import torch
-
+import wandb
 
 class CustomCNN(nn.Module):
         def __init__(self, n_input_channels, n_output_channels, activation=nn.ReLU(), bias=0.1):
@@ -206,8 +206,14 @@ def main():
     parser.add_argument("--minibatch_size", type=int, default=32) 
     parser.add_argument("--tau", type=float, default=1e-2)
     parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
 
     args = parser.parse_args()
+
+
+    if args.wandb:
+        wandb.init(project="DQN", config=args)
+        wandb.config.update(args)
 
     import logging
 

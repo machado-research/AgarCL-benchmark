@@ -27,6 +27,8 @@ import functools
 import gym_agario
 import os
 
+import wandb
+
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -175,9 +177,16 @@ def main():
 
 
     parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
+
+
+    parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
+
+    if args.wandb:
+        wandb.init(project="PPO", config=vars(args))
+        wandb.config.update(args)
 
     # Set a random seed used in PFRL
     utils.set_random_seed(args.seed)
