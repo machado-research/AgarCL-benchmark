@@ -96,7 +96,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mayman/Results/PPO_Multi_Head_results_Exp4_n",
+        default="/home/mayman/Results/PPO_Multi_Head_results_Exp4_noise_final",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."

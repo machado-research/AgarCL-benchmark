@@ -172,6 +172,12 @@ def main():
         default=0.01,
         help="Coefficient for soft update of the target network.",
     )
+    parser.add_argument(
+        "--max-grad-norm", 
+        type=float, 
+        default=0.5, 
+        help="Norm of max_grad",
+    )
     
     args = parser.parse_args()
 
@@ -369,7 +375,7 @@ def main():
         temperature_optimizer_lr=1e-4,
         update_interval=args.update_interval,
         soft_update_tau=args.soft_update_tau,
-        max_grad_norm=0.9,
+        max_grad_norm=args.max_grad_norm,
     )
 
     if len(args.load) > 0 or args.load_pretrained:
