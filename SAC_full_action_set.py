@@ -109,7 +109,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 2 * 10**6,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -444,7 +444,7 @@ def main():
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=False,
-            checkpoint_freq = 5000000,
+            checkpoint_freq = 1000000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,

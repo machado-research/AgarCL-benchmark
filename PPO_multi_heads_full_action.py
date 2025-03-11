@@ -107,7 +107,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 1 * 10**6,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -321,7 +321,7 @@ def main():
     )
 
 
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-4)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-7)
 
     agent = HybridPPO(
         model,
@@ -339,6 +339,15 @@ def main():
         gamma=0.995,
         lambd=0.97,
     )
+
+    step_hooks = []
+    # Linearly decay the learning rate to zero
+    def lr_setter(env, agent, value):
+        for param_group in agent.optimizer.param_groups:
+            param_group["lr"] = value
+    step_hooks.append(
+        experiments.LinearInterpolationHook(args.steps, args.lr, 0, lr_setter)
+    ) 
 
     if args.load or args.load_pretrained:
         # either load or load_pretrained must be false
@@ -392,10 +401,11 @@ def main():
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=False,
-            checkpoint_freq = 5000000,
+            checkpoint_freq = 1000000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,
+             step_hooks=step_hooks,
         )
 
 
