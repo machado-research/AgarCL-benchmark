@@ -177,6 +177,7 @@ def main():
         default=False,
         help="Render env states in a GUI window.",
     )
+    parser.add_argument("--noisy-net-sigma", type=float, default=0.5)
     parser.add_argument(
         "--monitor",
         action="store_true",
@@ -188,7 +189,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 1 * 10**6,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -208,12 +209,13 @@ def main():
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
     parser.add_argument("--lr_decay", type=bool, default=False)
+
     args = parser.parse_args()
 
 
-    # if args.wandb:
-    wandb.init(project="DQN_3", config=args)
-    wandb.config.update(args)
+    if args.wandb:
+        wandb.init(project="Rainbow", config=args)
+        wandb.config.update(args)
 
     import logging
 
@@ -260,9 +262,16 @@ def main():
     q_func = nn.Sequential(
         CustomCNN(n_input_channels=4, n_output_channels=256),
         nn.ReLU(),
-        nn.Linear(256, n_actions),
-        DiscreteActionValueHead(),
-        # DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
+        # nn.Linear(256, n_actions),
+        # DiscreteActionValueHead(),
+        DistributionalDuelingHead(256, n_actions, n_atoms, v_min, v_max),
+    )
+
+    # Noisy nets
+    pnn.to_factorized_noisy(q_func, sigma_scale=args.noisy_net_sigma)
+    # Turn off explorer
+    explorer = explorers.LinearDecayEpsilonGreedy(
+        start_epsilon=1.0,end_epsilon = 0.001, random_action_func=env.action_space.sample, decay_steps = 850000
     )
     
 
@@ -291,7 +300,7 @@ def main():
         # Feature extractor
         return np.asarray(x, dtype=np.float32) / 255
 
-    Agent = agents.DQN
+    Agent = agents.CategoricalDoubleDQN
     agent = Agent(
         q_func,
         opt,
@@ -310,7 +319,8 @@ def main():
         phi=phi,
     )
     step_hooks = []
-    if args.lr_decay == True:
+   
+    if args.lr_decay == True: 
         # Linearly decay the learning rate to zero
         def lr_setter(env, agent, value):
             for param_group in agent.optimizer.param_groups:

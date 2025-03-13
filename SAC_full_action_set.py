@@ -24,6 +24,8 @@ import os
 import json
 import os
 
+import wandb
+
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -76,7 +78,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mayman/Results/SAC_results_Exp4_noise",
+        default="/home/mayman/Results/SAC_mode_2",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -172,6 +174,16 @@ def main():
         default=0.01,
         help="Coefficient for soft update of the target network.",
     )
+    parser.add_argument(
+        "--max-grad-norm", 
+        type=float, 
+        default=0.5, 
+        help="Norm of max_grad",
+    )
+    
+    parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
+
+    
     
     args = parser.parse_args()
 
@@ -179,6 +191,11 @@ def main():
 
     args.outdir = experiments.prepare_output_dir(args, args.outdir, argv=sys.argv)
     print("Output files are saved in {}".format(args.outdir))
+
+
+    if args.wandb:
+        wandb.init(project="agarle", name="SAC", config=vars(args))
+        wandb.config.update(args)
 
     # Set a random seed used in PFRL
     utils.set_random_seed(args.seed)
@@ -369,7 +386,7 @@ def main():
         temperature_optimizer_lr=1e-4,
         update_interval=args.update_interval,
         soft_update_tau=args.soft_update_tau,
-        max_grad_norm=0.9,
+        max_grad_norm=args.max_grad_norm,
     )
 
     if len(args.load) > 0 or args.load_pretrained:
@@ -426,8 +443,8 @@ def main():
             eval_n_episodes=args.eval_n_runs,
             eval_interval=args.eval_interval,
             outdir=args.outdir,
-            save_best_so_far_agent=True,
-            checkpoint_freq = 500000,
+            save_best_so_far_agent=False,
+            checkpoint_freq = 5000000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,
