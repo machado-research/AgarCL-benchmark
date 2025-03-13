@@ -444,7 +444,7 @@ def main():
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=False,
-            checkpoint_freq = 5000000,
+            checkpoint_freq = 1000000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,

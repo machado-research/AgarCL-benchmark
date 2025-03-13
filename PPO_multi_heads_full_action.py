@@ -27,6 +27,8 @@ import functools
 import gym_agario
 import os
 
+import wandb
+
 class MultiActionWrapper(gym.ActionWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -96,7 +98,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mayman/Results/PPO_Multi_Head_results_Exp4_n",
+        default="/home/mayman/Results/PPO_mode_2",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -175,9 +177,17 @@ def main():
 
 
     parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
+
+
+    parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
+    parser.add_argument("--lr_decay", type=bool, default=False)
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
+
+    if args.wandb:
+        wandb.init(project="PPO", config=vars(args))
+        wandb.config.update(args)
 
     # Set a random seed used in PFRL
     utils.set_random_seed(args.seed)
@@ -312,7 +322,7 @@ def main():
     )
 
 
-    opt = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-4)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr, eps=1e-7)
 
     agent = HybridPPO(
         model,
@@ -330,6 +340,16 @@ def main():
         gamma=0.995,
         lambd=0.97,
     )
+
+    step_hooks = []
+    if args.lr_decay == True:
+    # Linearly decay the learning rate to zero
+        def lr_setter(env, agent, value):
+            for param_group in agent.optimizer.param_groups:
+                param_group["lr"] = value
+        step_hooks.append(
+            experiments.LinearInterpolationHook(args.steps, args.lr, 0, lr_setter)
+        ) 
 
     if args.load or args.load_pretrained:
         # either load or load_pretrained must be false
@@ -382,11 +402,12 @@ def main():
             eval_n_episodes=args.eval_n_runs,
             eval_interval=args.eval_interval,
             outdir=args.outdir,
-            save_best_so_far_agent=True,
-            checkpoint_freq = 500000,
+            save_best_so_far_agent=False,
+            checkpoint_freq = 1000000,
             # log_interval=args.log_interval,
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,
+             step_hooks=step_hooks,
         )
 
 

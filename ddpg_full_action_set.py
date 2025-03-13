@@ -161,7 +161,7 @@ def main():
     parser.add_argument(
         "--epochs", 
         type=int,
-        default=1,
+        default=2,
         help="Number of epochs"
     )
     
@@ -174,8 +174,14 @@ def main():
     parser.add_argument(
         "--tau",
         type=float,
-        default=5e-3,
+        default=0.01,
         help="Soft update tau"
+    )
+    parser.add_argument(
+        "--target_update_method", 
+        type = str, 
+        default = "soft", 
+        help = "Type of target update method"
     )
     
     args = parser.parse_args()
@@ -335,7 +341,7 @@ def main():
         gamma=0.99,
         explorer=explorer,
         replay_start_size=args.replay_start_size,
-        target_update_method="soft",
+        target_update_method=args.target_update_method,
         target_update_interval=args.target_update_interval,
         update_interval=args.update_interval,
         soft_update_tau=args.tau,

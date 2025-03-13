@@ -188,7 +188,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 1 * 10**6,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -211,9 +211,9 @@ def main():
     args = parser.parse_args()
 
 
-    # if args.wandb:
-    wandb.init(project="DQN_3", config=args)
-    wandb.config.update(args)
+    if args.wandb:
+        wandb.init(project="DQN", config=args)
+        wandb.config.update(args)
 
     import logging
 
@@ -318,6 +318,15 @@ def main():
         step_hooks.append(
             experiments.LinearInterpolationHook(args.steps, args.lr, 0, lr_setter)
         ) 
+
+    step_hooks = []
+    # Linearly decay the learning rate to zero
+    def lr_setter(env, agent, value):
+        for param_group in agent.optimizer.param_groups:
+            param_group["lr"] = value
+    step_hooks.append(
+        experiments.LinearInterpolationHook(args.steps, args.lr, 0, lr_setter)
+    ) 
 
     if args.load or args.load_pretrained:
         # either load or load_pretrained must be false

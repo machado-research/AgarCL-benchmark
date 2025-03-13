@@ -24,3 +24,4 @@ jax~=0.4
 jaxlib~=0.4
 optax~=0.2
 tensorflow-probability~=0.24
+wandb
