@@ -32,12 +32,12 @@ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.o
 pip3 install git+https://github.com/prabhatnagarajan/pfrl.git@gymnasium_support
 pip3 install imageio
 
-cd /home/mayman/projects/def-machado/mayman/AgarLE
+cd YOUR_DIR/AgarLE
 
 python3 setup.py install --user 
 
 # python3 install -r /home/mayman/projects/def-machado/mayman/AgarLE-benchmark/requirements.txt
 
-cd /home/mayman/projects/def-machado/mayman/agarle_bench/AgarLE-benchmark
+cd YOUR_DIR/AgarLE-benchmark
 
 python DQN_full_action_set.py --outdir "/home/mayman/Results/DQN_mode_2"
