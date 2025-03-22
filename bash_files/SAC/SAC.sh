@@ -2,16 +2,15 @@
 #SBATCH --mail-type=ALL
 #SBATCH --account=rrg-machado
 #SBATCH --mail-user=mamoham3@ualberta.ca
-#SBATCH --job-name=SAC_mode_2
-#SBATCH --output=SAC_mode_2.out
-#SBATCH --error=SAC_mode_2.err
+#SBATCH --job-name=SAC_mode_6
+#SBATCH --output=SAC_mode_6.out
+#SBATCH --error=SAC_mode_6.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=64GB
-#SBATCH --time=23:00:00
+#SBATCH --time=15:00:00
 #SBATCH --cpu-freq=Performance
-#SBATCH --array=1-10
 
 module load clang/17.0.6
 module load cmake
@@ -27,9 +26,6 @@ export CXX=clang++
 export EGL_PLATFORM=surfaceless
 # Define the Singularity image
 
-seed=$SLURM_ARRAY_TASK_ID
-
-
 # pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 # pip install imageio
 # # pip install opencv-python
@@ -41,7 +37,7 @@ seed=$SLURM_ARRAY_TASK_ID
 # python3 install -r /home/mayman/projects/def-machado/mayman/AgarLE-benchmark/requirements.txt
 
 
-cd /home/mayman/projects/def-machado/mayman/agarle_bench/AgarLE-benchmark
+cd /home/mayman/projects/def-machado/mayman/AgarLE-benchmark
 
 # python train_SAC.py --seed $seed
-python SAC_full_action_set.py --reward "reward_gym" --lr 0.00001 --seed $seed --outdir '/home/mayman/Results/SAC_mode_2' --soft-update-tau 0.001 --max-grad-norm 0.7
+python SAC_full_action_set.py --reward "reward_gym" --lr 0.00001 --seed $seed --outdir '/home/mayman/Results/SAC_mode_6' --soft-update-tau 0.001 --max-grad-norm 0.7

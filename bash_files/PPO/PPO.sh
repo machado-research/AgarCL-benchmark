@@ -2,14 +2,14 @@
 #SBATCH --mail-type=ALL
 #SBATCH --account=rrg-machado
 #SBATCH --mail-user=mamoham3@ualberta.ca
-#SBATCH --job-name=ppo_1_noise
-#SBATCH --output=ppo_1_noise.out
-#SBATCH --error=ppo_1_noise.err
+#SBATCH --job-name=ppo_6
+#SBATCH --output=ppo_6.out
+#SBATCH --error=ppo_6.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=64GB
-#SBATCH --time=23:00:00
+#SBATCH --time=5:00:00
 #SBATCH --cpu-freq=Performance
 
 # module load apptainer
@@ -29,7 +29,7 @@ export EGL_PLATFORM=surfaceless
 
 
 
-cd /home/mayman/projects/def-machado/mayman/agarle_bench/AgarLE-benchmark
+cd /home/mayman/projects/def-machado/mayman/AgarLE-benchmark
 
 
 python PPO_multi_heads_full_action.py --reward "min_max" --lr 1e-5 --entropy-coef 0.05 --clip-eps 0.4 --value-func-coef 0.9 --max-grad-norm 0.5  --outdir "/home/mayman/Results/PPO_mode_2"

@@ -18,7 +18,7 @@ def modify_and_run_script(original_file, var_options, base_command):
         
         # Remove last line and prepare new command
         modified_lines = lines[:-1]
-        new_command = base_command + " " + " ".join(f"{key} {value}" for key, value in var_changes.items()) + " --wandb"
+        new_command = base_command + " " + " ".join(f"{key} {value}" for key, value in var_changes.items())
         
         # Write new script
         with open(new_file, 'w') as file:
