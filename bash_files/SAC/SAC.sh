@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=64GB
-#SBATCH --time=15:00:00
+#SBATCH --time=47:00:00
 #SBATCH --cpu-freq=Performance
 
 module load clang/17.0.6
