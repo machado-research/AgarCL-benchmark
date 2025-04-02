@@ -9,7 +9,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=16GB
-#SBATCH --time=5:00:00
+#SBATCH --time=23:00:00
 #SBATCH --cpu-freq=Performance
 # module load apptainer
 # module --force purge 
