@@ -54,6 +54,11 @@ def main():
     parser.add_argument("--minibatch-size", type=int, default=32)
     parser.add_argument("--tau", type=float, default=1e-2)
     parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--lr_decay", type=bool, default=False)
+    parser.add_argument(
+        "--pretrained-type", type=str, default="best", choices=["best", "final"]
+    )
+
     args = parser.parse_args()
 
     if args.wandb:
@@ -80,7 +85,10 @@ def main():
 
         # env = make_env(env_name, env_config, gamma, norm_obs, norm_reward)
         env = gym.make(env_name, **env_config)
+        ######################################################
+        ###################################################################
         env = DiscreteActions(env)
+
         env = GoBiggerObsFlatten(env,
                             max_food=env_config['num_pellets'],
                             max_virus=env_config['num_viruses'],
@@ -160,8 +168,70 @@ def main():
         phi=phi,
     )
 
-    # load/demo/train logic follows unchanged...
-    # ...
+    step_hooks = []
+    if args.lr_decay == True:
+        # Linearly decay the learning rate to zero
+        def lr_setter(env, agent, value):
+            for param_group in agent.optimizer.param_groups:
+                param_group["lr"] = value
+        step_hooks.append(
+            experiments.LinearInterpolationHook(args.steps, args.lr, 0, lr_setter)
+        ) 
+
+    step_hooks = []
+    # Linearly decay the learning rate to zero
+    def lr_setter(env, agent, value):
+        for param_group in agent.optimizer.param_groups:
+            param_group["lr"] = value
+    step_hooks.append(
+        experiments.LinearInterpolationHook(args.steps, args.lr, 0, lr_setter)
+    ) 
+
+
+    if args.demo:
+        eval_stats = experiments.eval_performance(
+            env=eval_env, agent=agent, n_steps=args.eval_n_steps, n_episodes=None
+        )
+        print(
+            "n_episodes: {} mean: {} median: {} stdev {}".format(
+                eval_stats["episodes"],
+                eval_stats["mean"],
+                eval_stats["median"],
+                eval_stats["stdev"],
+            )
+        )
+    else:
+        experiments.train_agent_with_evaluation(
+            agent=agent,
+            env=env,
+            steps=args.steps,
+            eval_n_steps=args.eval_n_steps,
+            eval_n_episodes=None,
+            eval_interval=args.eval_interval,
+            outdir=args.outdir,
+            save_best_so_far_agent=False,
+            eval_env=eval_env,
+            checkpoint_freq = 1000000,
+            step_hooks=step_hooks,
+        )
+
+        dir_of_best_network = os.path.join(args.outdir, "best")
+        agent.load(dir_of_best_network)
+
+        # run 30 evaluation episodes, each capped at 5 mins of play
+        stats = experiments.evaluator.eval_performance(
+            env=eval_env,
+            agent=agent,
+            n_steps=None,
+            n_episodes=args.n_best_episodes,
+            max_episode_len=4500,
+            logger=None,
+        )
+        with open(os.path.join(args.outdir, "bestscores.json"), "w") as f:
+            json.dump(stats, f)
+        print("The results of the best scoring network:")
+        for stat in stats:
+            print(str(stat) + ":" + str(stats[stat]))
 
 if __name__ == "__main__":
     main()
