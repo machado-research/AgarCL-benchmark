@@ -1,15 +1,15 @@
 #!/bin/bash
 #SBATCH --mail-type=ALL
-#SBATCH --account=rrg-machado
+#SBATCH --account=aip-machado
 #SBATCH --mail-user=mamoham3@ualberta.ca
-#SBATCH --job-name=SAC_mode_6
-#SBATCH --output=SAC_mode_6.out
-#SBATCH --error=SAC_mode_6.err
+#SBATCH --job-name=SAC_mode_3_cont
+#SBATCH --output=SAC_mode_3_cont.out
+#SBATCH --error=SAC_mode_3_cont.err
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --gpus-per-task=1
 #SBATCH --mem=64GB
-#SBATCH --time=47:00:00
+#SBATCH --time=23:00:00
 #SBATCH --cpu-freq=Performance
 
 module load clang/17.0.6
@@ -37,7 +37,7 @@ export EGL_PLATFORM=surfaceless
 # python3 install -r /home/mayman/projects/def-machado/mayman/AgarLE-benchmark/requirements.txt
 
 
-cd /home/mayman/projects/def-machado/mayman/AgarLE-benchmark
+cd /home/mayman/projects/aip-machado/mayman/AgarLE-benchmark
 
 # python train_SAC.py --seed $seed
-python SAC_full_action_set.py --reward "reward_gym" --lr 0.00001 --seed $seed --outdir '/home/mayman/Results/SAC_mode_6' --soft-update-tau 0.001 --max-grad-norm 0.7
+python SAC_full_action_set.py --reward "reward_gym" --lr 0.00001 --seed 0 --outdir '/home/mayman/Results/SAC_mode_6' --soft-update-tau 0.001 --max-grad-norm 0.7

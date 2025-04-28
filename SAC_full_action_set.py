@@ -180,6 +180,12 @@ def main():
         default=0.5, 
         help="Norm of max_grad",
     )
+    parser.add_argument(
+        "--temperature-lr",
+        type=float,
+        default=1e-4,
+        help="Learning rate of temperature optimizer.",
+    )
     
     parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
 
@@ -387,6 +393,7 @@ def main():
         update_interval=args.update_interval,
         soft_update_tau=args.soft_update_tau,
         max_grad_norm=args.max_grad_norm,
+        act_deterministically=False,
     )
 
     if len(args.load) > 0 or args.load_pretrained:
@@ -446,8 +453,9 @@ def main():
             save_best_so_far_agent=False,
             checkpoint_freq = 1000000,
             # log_interval=args.log_interval,
-             train_max_episode_len=timestep_limit,
-             eval_max_episode_len=timestep_limit,
+            train_max_episode_len=timestep_limit,
+            eval_max_episode_len=timestep_limit,
+            case = "continuing",
         )
 
 
