@@ -54,7 +54,9 @@ class GoBiggerObsFlatten(gym.ObservationWrapper):
         out = []
         # actual items
         for info in infos[:max_count]:
-            x, y = info.position
+            x = info.get_position_x()
+            y = info.get_position_y()
+
             out += [float(type_id), x, y, info.radius, info.score]
        
         # pad if fewer
