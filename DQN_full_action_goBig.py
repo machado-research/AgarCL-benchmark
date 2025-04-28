@@ -73,15 +73,11 @@ def main():
     # load config for GoBigger
     env_config = json.load(open('env_config.json', 'r'))
 
-
-
     def make_env_(test):
         # Use different random seeds for train and test envs
         
         env_seed = test_seed if test else train_seed
         env_name = "agario-screen-v0"
-
-        print( env_name)
 
         # env = make_env(env_name, env_config, gamma, norm_obs, norm_reward)
         env = gym.make(env_name, **env_config)
