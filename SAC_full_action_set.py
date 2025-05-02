@@ -78,7 +78,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mayman/Results/SAC_mode_2",
+        default="/home/mamm/ayman/thesis/AgarLE-benchmark/SAC_mode_3_cont",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -389,7 +389,7 @@ def main():
         burnin_action_func=burnin_action_func,
         c_entropy_target=-c_action_size,
         d_entropy_target=-d_action_size,
-        temperature_optimizer_lr=1e-4,
+        temperature_optimizer_lr=args.temperature_lr,
         update_interval=args.update_interval,
         soft_update_tau=args.soft_update_tau,
         max_grad_norm=args.max_grad_norm,
@@ -453,9 +453,9 @@ def main():
             save_best_so_far_agent=False,
             checkpoint_freq = 1000000,
             # log_interval=args.log_interval,
-            train_max_episode_len=timestep_limit,
-            eval_max_episode_len=timestep_limit,
-            case = "continuing",
+             train_max_episode_len=timestep_limit,
+             eval_max_episode_len=timestep_limit,
+            case="continuing" if args.cont else "episodic",
         )
 
 

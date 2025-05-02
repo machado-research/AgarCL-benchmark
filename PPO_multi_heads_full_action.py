@@ -98,7 +98,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mayman/Results/PPO_mode_2",
+        default="/home/mamm/ayman/thesis/AgarLE-benchmark/PPO_mode_3_cont",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -107,7 +107,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 5 * 10**6,
+        default= 8 * 10**4,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -180,6 +180,7 @@ def main():
 
 
     parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
+    parser.add_argument('--cont', action='store_true', help='Use continuing training')
     parser.add_argument("--lr_decay", type=bool, default=False)
     args = parser.parse_args()
 
@@ -405,9 +406,10 @@ def main():
             save_best_so_far_agent=False,
             checkpoint_freq = 1000000,
             # log_interval=args.log_interval,
-             train_max_episode_len=timestep_limit,
-             eval_max_episode_len=timestep_limit,
-             step_hooks=step_hooks,
+            train_max_episode_len=timestep_limit,
+            eval_max_episode_len=timestep_limit,
+            step_hooks=step_hooks,
+            case="continuing" if args.cont else "episodic",
         )
 
 

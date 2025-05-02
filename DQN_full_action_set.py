@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mayman/Results/DQN_mode_2",
+        default="/home/mamm/ayman/thesis/AgarLE-benchmark/DQN_mode_3_cont",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -207,6 +207,8 @@ def main():
     parser.add_argument("--tau", type=float, default=1e-2)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
+    parser.add_argument('--ezGreedy', action='store_true', help='Use EZGreedy explorer')
+    parser.add_argument('--cont', action='store_true', help='Use continuing training')
     parser.add_argument("--lr_decay", type=bool, default=False)
     args = parser.parse_args()
 
@@ -280,13 +282,21 @@ def main():
 
     rbuf = replay_buffers.ReplayBuffer(100000)#1e5
 
-    explorer = explorers.LinearDecayEpsilonGreedy(
+    if args.ezGreedy:
+        explorer = explorers.EZGreedy(
+            start_epsilon=1.0,
+            end_epsilon=0.1,
+            decay_steps=10**6,
+            random_action_func=lambda: np.random.randint(n_actions),
+        )
+    else: 
+        explorer = explorers.LinearDecayEpsilonGreedy(
         start_epsilon=1.0,
         end_epsilon=0.1,
         decay_steps=10**6,
         random_action_func=lambda: np.random.randint(n_actions),
-    )
-
+        )
+        
     def phi(x):
         # Feature extractor
         return np.asarray(x, dtype=np.float32) / 255
@@ -365,6 +375,7 @@ def main():
             eval_env=eval_env,
             checkpoint_freq = 1000000,
             step_hooks=step_hooks,
+            case="continuing" if args.cont else "episodic",
         )
 
         dir_of_best_network = os.path.join(args.outdir, "best")
