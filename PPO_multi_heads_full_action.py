@@ -107,7 +107,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 8 * 10**4,
+        default= 5 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -410,6 +410,8 @@ def main():
             eval_max_episode_len=timestep_limit,
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
+            # env_checkpointable=True,
+
         )
 
 

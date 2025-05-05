@@ -456,6 +456,8 @@ def main():
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,
             case="continuing" if args.cont else "episodic",
+            # env_checkpointable=True,
+
         )
 
 
