@@ -376,6 +376,7 @@ def main():
             checkpoint_freq = 1000000,
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
+            env_checkpointable=True,
         )
 
         dir_of_best_network = os.path.join(args.outdir, "best")
