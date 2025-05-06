@@ -188,7 +188,9 @@ def main():
     )
     
     parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
-
+    parser.add_argument(
+        "--cont", action="store_true", help="Continue training from checkpoint"
+    )
     
     
     args = parser.parse_args()
