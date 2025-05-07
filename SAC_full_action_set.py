@@ -191,7 +191,7 @@ def main():
     parser.add_argument(
         "--cont", action="store_true", help="Continue training from checkpoint"
     )
-    
+    parser.add_argument("--step-offset", type=int, default=0)
     
     args = parser.parse_args()
 
@@ -458,6 +458,7 @@ def main():
              train_max_episode_len=timestep_limit,
              eval_max_episode_len=timestep_limit,
             case="continuing" if args.cont else "episodic",
+            step_offset=args.step_offset,
             # env_checkpointable=True,
 
         )

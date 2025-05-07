@@ -182,6 +182,7 @@ def main():
     parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
     parser.add_argument('--cont', action='store_true', help='Use continuing training')
     parser.add_argument("--lr_decay", type=bool, default=False)
+    parser.add_argument("--step-offset", type=int, default=0)
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
@@ -410,6 +411,7 @@ def main():
             eval_max_episode_len=timestep_limit,
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
+            step_offset=args.step_offset,
             # env_checkpointable=True,
 
         )

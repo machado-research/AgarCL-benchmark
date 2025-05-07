@@ -210,6 +210,7 @@ def main():
     parser.add_argument('--ezGreedy', action='store_true', help='Use EZGreedy explorer')
     parser.add_argument('--cont', action='store_true', help='Use continuing training')
     parser.add_argument("--lr_decay", type=bool, default=False)
+    parser.add_argument("--step-offset", type=int, default=0)
     args = parser.parse_args()
 
 
@@ -376,6 +377,7 @@ def main():
             checkpoint_freq = 1000000,
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
+            step_offset=args.step_offset,
             # env_checkpointable=True,
         )
 
