@@ -212,6 +212,7 @@ def main():
     parser.add_argument("--lr_decay", type=bool, default=False)
     parser.add_argument("--step-offset", type=int, default=0)
     parser.add_argument("--load-replay-buffer", type=str, default="")
+    parser.add_argument("--load-env", type=str, default="")
     args = parser.parse_args()
 
 
@@ -252,6 +253,9 @@ def main():
         env = DiscreteActions(env)
         env = ModifyObservationWrapper(env)
         env.seed(int(env_seed))
+        if args.load_env != "": 
+            env.load_env_state(args.load_env)
+            
         if test:
             # Randomize actions like epsilon-greedy in evaluation as well
             env = pfrl.wrappers.RandomizeAction(env, 0.5)

@@ -194,6 +194,8 @@ def main():
     parser.add_argument("--step-offset", type=int, default=0)
     parser.add_argument("--load-replay-buffer", type=str, default="")
     
+    parser.add_argument("--load-env", type=str, default="")
+    
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
@@ -219,6 +221,9 @@ def main():
         # Use different random seeds for train and test envs
         # env_seed = (2**32 - 1 - process_seed if test else process_seed) % (2**32)
         env.seed(args.seed)
+        if args.load_env != "": 
+            env.load_env_state(args.load_env)
+            
         env = MultiActionWrapper(env)
         env = ObservationWrapper(env)
         # env = gym.wrappers.ClipAction(env)
@@ -236,12 +241,6 @@ def main():
 
     def make_batch_env(test):
         return make_env(0, test)
-        # return pfrl.envs.MultiprocessVectorEnv(
-        #     [
-        #         functools.partial(make_env, idx, test)
-        #         for idx, env in enumerate(range(args.num_envs))
-        #     ]
-        # )
 
     sample_env = make_env(process_idx=0, test=False)
     timestep_limit = sample_env.spec.max_episode_steps

@@ -214,6 +214,9 @@ def main():
         # Use different random seeds for train and test envs
         # env_seed = (2**32 - 1 - process_seed if test else process_seed) % (2**32)
         env.seed(args.seed)
+        if args.load_env != "": 
+            env.load_env_state(args.load_env)
+            
         env = MultiActionWrapper(env)
         env = ObservationWrapper(env)
         # env = gym.wrappers.ClipAction(env)
