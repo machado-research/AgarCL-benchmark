@@ -237,8 +237,20 @@ def main():
         #Here update both --load-env and --load-replay-buffer
         checkpoint_number = args.load.split("/")[-1].split("_")[0]
         load_env_checkpoint_name = f"checkpoint_{checkpoint_number}.json"
-        args.load_env = os.path.join(args.outdir, load_env_checkpoint_name)
-        args.load_replay_buffer = os.path.join(args.outdir, f"{checkpoint_number}_replay.pkl")
+        args.load_env = os.path.join(args.load, load_env_checkpoint_name)
+        args.load_replay_buffer = os.path.join(args.load, f"{checkpoint_number}_checkpoint.replay.pkl")
+        print("Replay buffer loaded from: ", args.load_replay_buffer)
+        print("Env state loaded from: ", args.load_env)
+        args.step_offset = int(checkpoint_number)
+        episodic_rewards_path = os.path.join(args.outdir, "episodic_rewards.csv")
+        if os.path.exists(episodic_rewards_path):
+            with open(episodic_rewards_path, "r") as f:
+                last_line = f.readlines()[-1].strip()
+                args.total_reward = float(last_line.split(",")[2])
+        else:
+            args.total_reward = 0.0
+        print("Total reward so far: ", args.total_reward)
+        print("Step offset: ", args.step_offset)
     else: 
         args.outdir = experiments.prepare_output_dir(args, args.outdir)
 
