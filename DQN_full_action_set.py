@@ -229,7 +229,13 @@ def main():
     train_seed = args.seed
     test_seed = 2**31 - 1 - args.seed
 
-    args.outdir = experiments.prepare_output_dir(args, args.outdir)
+    if (args.load != ""): 
+        exp_id = args.load.split("/")[-2]
+        args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
+    else: 
+        args.outdir = experiments.prepare_output_dir(args, args.outdir)
+
+    # args.outdir = experiments.prepare_output_dir(args, args.outdir)
     print("Output files are saved in {}".format(args.outdir))
 
     def make_env_(test):

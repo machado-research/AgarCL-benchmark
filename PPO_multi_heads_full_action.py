@@ -200,7 +200,12 @@ def main():
     process_seeds = np.arange(args.num_envs) + args.seed * args.num_envs
     assert process_seeds.max() < 2**32
 
-    args.outdir = experiments.prepare_output_dir(args, args.outdir)
+    if (args.load != ""): 
+        exp_id = args.load.split("/")[-2]
+        args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
+    else: 
+        args.outdir = experiments.prepare_output_dir(args, args.outdir)
+
 
     def make_env(process_idx, test):
         env_config = json.load(open('env_config.json', 'r'))

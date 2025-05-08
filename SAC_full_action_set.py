@@ -196,10 +196,12 @@ def main():
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
-
-    args.outdir = experiments.prepare_output_dir(args, args.outdir, argv=sys.argv)
+    if (args.load != ""): 
+        exp_id = args.load.split("/")[-2]
+        args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id, argv=sys.argv)
+    else: 
+        args.outdir = experiments.prepare_output_dir(args, args.outdir, argv=sys.argv)
     print("Output files are saved in {}".format(args.outdir))
-
 
     if args.wandb:
         wandb.init(project="agarle", name="SAC", config=vars(args))
