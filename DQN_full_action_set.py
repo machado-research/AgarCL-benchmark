@@ -188,7 +188,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 5 * 10**6,
+        default= 100 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -213,8 +213,8 @@ def main():
     parser.add_argument("--step-offset", type=int, default=0)
     parser.add_argument("--load-replay-buffer", type=str, default="")
     parser.add_argument("--load-env", type=str, default="")
+    parser.add_argument("--total-reward", type=int, default=0)
     args = parser.parse_args()
-
 
     if args.wandb:
         wandb.init(project="DQN", config=args)
@@ -391,12 +391,13 @@ def main():
             outdir=args.outdir,
             save_best_so_far_agent=False,
             eval_env=eval_env,
-            checkpoint_freq = 10000,
+            checkpoint_freq = 5000000,
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
             env_checkpointable=True,
             buffer_checkpointable=True,
+            total_reward_so_far=args.total_reward,
         )
 
         dir_of_best_network = os.path.join(args.outdir, "best")
