@@ -3,8 +3,8 @@
     "num_frames": 1,
     "arena_size": 350,
     "num_pellets": 500,
-    "num_viruses": 0,
-    "num_bots": 0,
+    "num_viruses": 10,
+    "num_bots": 8,
     "pellet_regen": true,
     "grid_size": 32,
     "screen_len": 128,
@@ -19,8 +19,9 @@
     "c_death": 0,
     "video_path": "screen_video.mp4",
     "add_noise"     : true,
-    "mode"          : 3, 
+    "mode"          : 0, 
     "agent_view"    : true,
     "number_steps"  : 3000, 
-    "env_type"      : 1
+    "env_type"      : 1, 
+    "load_env_snapshot": 0
 }
