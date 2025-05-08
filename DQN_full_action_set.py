@@ -211,6 +211,7 @@ def main():
     parser.add_argument('--cont', action='store_true', help='Use continuing training')
     parser.add_argument("--lr_decay", type=bool, default=False)
     parser.add_argument("--step-offset", type=int, default=0)
+    parser.add_argument("--load-replay-buffer", type=str, default="")
     args = parser.parse_args()
 
 
@@ -288,6 +289,11 @@ def main():
     opt = torch.optim.Adam(q_func.parameters(), args.lr , eps=1.5 * 10**-4)
 
     rbuf = replay_buffers.ReplayBuffer(100000)#1e5
+    
+    if args.load_replay_buffer != "":
+        rbuf.load(args.load_replay_buffer)
+        print("Replay buffer loaded from: ", args.load_replay_buffer)
+        
 
     if args.ezGreedy:
         explorer = explorers.EZGreedy(

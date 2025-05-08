@@ -192,6 +192,7 @@ def main():
         "--cont", action="store_true", help="Continue training from checkpoint"
     )
     parser.add_argument("--step-offset", type=int, default=0)
+    parser.add_argument("--load-replay-buffer", type=str, default="")
     
     args = parser.parse_args()
 
@@ -365,6 +366,10 @@ def main():
     q_func2, q_func2_optimizer = make_q_func_with_optimizer()
 
     rbuf = replay_buffers.ReplayBuffer(args.replay_buffer)
+    
+    if(args.load_replay_buffer != ""):
+        rbuf.load(args.load_replay_buffer)
+        print("Replay buffer loaded from: ", args.load_replay_buffer)
 
     def burnin_action_func():
         """Select random actions until model is updated one or more times."""
