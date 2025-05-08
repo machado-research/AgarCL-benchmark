@@ -231,7 +231,7 @@ def main():
     train_seed = args.seed
     test_seed = 2**31 - 1 - args.seed
 
-    if (args.load != ""): 
+    if (args.load is not None): 
         exp_id = args.load.split("/")[-2]
         args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
     else: 
@@ -250,11 +250,12 @@ def main():
 
         # env = make_env(env_name, env_config, gamma, norm_obs, norm_reward)
         env = gym.make(env_name, **env_config)
-        env = DiscreteActions(env)
-        env = ModifyObservationWrapper(env)
         env.seed(int(env_seed))
         if args.load_env != "": 
             env.load_env_state(args.load_env)
+        env = DiscreteActions(env)
+        env = ModifyObservationWrapper(env)
+        
             
         if test:
             # Randomize actions like epsilon-greedy in evaluation as well
@@ -390,11 +391,12 @@ def main():
             outdir=args.outdir,
             save_best_so_far_agent=False,
             eval_env=eval_env,
-            checkpoint_freq = 1000000,
+            checkpoint_freq = 10000,
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
-            # env_checkpointable=True,
+            env_checkpointable=True,
+            buffer_checkpointable=True,
         )
 
         dir_of_best_network = os.path.join(args.outdir, "best")
