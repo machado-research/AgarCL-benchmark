@@ -202,6 +202,11 @@ def main():
     if (args.load != ""): 
         exp_id = args.load.split("/")[-2]
         args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id, argv=sys.argv)
+        #Here update both --load-env and --load-replay-buffer
+        checkpoint_number = args.load.split("/")[-1].split("_")[0]
+        load_env_checkpoint_name = f"checkpoint_{checkpoint_number}.json"
+        args.load_env = os.path.join(args.outdir, load_env_checkpoint_name)
+        args.load_replay_buffer = os.path.join(args.outdir, f"{checkpoint_number}_replay.pkl")
     else: 
         args.outdir = experiments.prepare_output_dir(args, args.outdir, argv=sys.argv)
     print("Output files are saved in {}".format(args.outdir))
