@@ -23,5 +23,5 @@
     "agent_view"    : true,
     "number_steps"  : 3000, 
     "env_type"      : 1, 
-    "load_env_snapshot": 1
+    "load_env_snapshot": 0
 }

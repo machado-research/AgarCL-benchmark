@@ -183,6 +183,8 @@ def main():
     parser.add_argument('--cont', action='store_true', help='Use continuing training')
     parser.add_argument("--lr_decay", type=bool, default=False)
     parser.add_argument("--step-offset", type=int, default=0)
+    parser.add_argument("--load-env", type=str, default="")
+    parser.add_argument("--load-replay-buffer", type=str, default="")
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
