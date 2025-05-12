@@ -441,7 +441,7 @@ def main():
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
 
-            total_reward=args.total_reward,
+            total_reward_so_far=args.total_reward,
             # env_checkpointable=True,
 
         )
