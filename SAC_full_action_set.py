@@ -195,6 +195,7 @@ def main():
     parser.add_argument("--load-replay-buffer", type=str, default="")
     
     parser.add_argument("--load-env", type=str, default="")
+    parser.add_argument("--total-reward", type=float, default=0.0)
     
     args = parser.parse_args()
 
@@ -482,6 +483,7 @@ def main():
              eval_max_episode_len=timestep_limit,
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
+            total_reward=args.total_reward,
             # env_checkpointable=True,
 
         )

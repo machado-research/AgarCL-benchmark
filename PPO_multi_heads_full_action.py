@@ -185,6 +185,7 @@ def main():
     parser.add_argument("--step-offset", type=int, default=0)
     parser.add_argument("--load-env", type=str, default="")
     parser.add_argument("--load-replay-buffer", type=str, default="")
+    parser.add_argument("--total-reward", type=float, default=0.0)
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
@@ -439,6 +440,8 @@ def main():
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
+
+            total_reward=args.total_reward,
             # env_checkpointable=True,
 
         )
