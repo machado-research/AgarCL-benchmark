@@ -212,9 +212,6 @@ def main():
                 last_line = f.readlines()[-1].strip()
                 args.step_offset = int(last_line.split(",")[1])
                 args.episode_idx = int(last_line.split(",")[0])
-        
-        
-        import pdb; pdb.set_trace()
     else: 
         args.outdir = experiments.prepare_output_dir(args, args.outdir)
     # if (args.load != ""): 
