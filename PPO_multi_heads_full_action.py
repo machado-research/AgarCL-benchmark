@@ -107,7 +107,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 5 * 10**6,
+        default= 20 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -186,6 +186,7 @@ def main():
     parser.add_argument("--load-env", type=str, default="")
     parser.add_argument("--load-replay-buffer", type=str, default="")
     parser.add_argument("--total-reward", type=float, default=0.0)
+    parser.add_argument("--episode-idx", type=int, default=0)
     args = parser.parse_args()
 
     logging.basicConfig(level=args.log_level)
@@ -202,29 +203,40 @@ def main():
     # If seed=1 and processes=4, subprocess seeds are [4, 5, 6, 7].
     process_seeds = np.arange(args.num_envs) + args.seed * args.num_envs
     assert process_seeds.max() < 2**32
-
-    if (args.load != ""): 
+    if (args.load != ""):
         exp_id = args.load.split("/")[-2]
         args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
-        #Here update both --load-env and --load-replay-buffer
-        checkpoint_number = args.load.split("/")[-1].split("_")[0]
-        load_env_checkpoint_name = f"checkpoint_{checkpoint_number}.json"
-        args.load_env = os.path.join(args.load, load_env_checkpoint_name)
-        args.load_replay_buffer = os.path.join(args.load, f"{checkpoint_number}_checkpoint.replay.pkl")
-        print("Replay buffer loaded from: ", args.load_replay_buffer)
-        print("Env state loaded from: ", args.load_env)
-        args.step_offset = int(checkpoint_number)
         episodic_rewards_path = os.path.join(args.outdir, "episodic_rewards.csv")
         if os.path.exists(episodic_rewards_path):
             with open(episodic_rewards_path, "r") as f:
                 last_line = f.readlines()[-1].strip()
-                args.total_reward = float(last_line.split(",")[2])
-        else:
-            args.total_reward = 0.0
-        print("Total reward so far: ", args.total_reward)
-        print("Step offset: ", args.step_offset)
+                args.step_offset = int(last_line.split(",")[1])
+                args.episode_idx = int(last_line.split(",")[0])
+        
+        
+        import pdb; pdb.set_trace()
     else: 
         args.outdir = experiments.prepare_output_dir(args, args.outdir)
+    # if (args.load != ""): 
+    #     exp_id = args.load.split("/")[-2]
+    #     args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
+    #     #Here update both --load-env and --load-replay-buffer
+    #     checkpoint_number = args.load.split("/")[-1].split("_")[0]
+    #     load_env_checkpoint_name = f"checkpoint_{checkpoint_number}.json"
+    #     args.load_env = os.path.join(args.load, load_env_checkpoint_name)
+    #     args.load_replay_buffer = os.path.join(args.load, f"{checkpoint_number}_checkpoint.replay.pkl")
+    #     print("Replay buffer loaded from: ", args.load_replay_buffer)
+    #     print("Env state loaded from: ", args.load_env)
+    #     args.step_offset = int(checkpoint_number)
+    #     episodic_rewards_path = os.path.join(args.outdir, "episodic_rewards.csv")
+    #     if os.path.exists(episodic_rewards_path):
+    #         with open(episodic_rewards_path, "r") as f:
+    #             last_line = f.readlines()[-1].strip()
+    #             args.total_reward = float(last_line.split(",")[2])
+    #     else:
+    #         args.total_reward = 0.0
+    #     print("Total reward so far: ", args.total_reward)
+    #     print("Step offset: ", args.step_offset)
 
 
     def make_env(process_idx, test):
@@ -433,14 +445,13 @@ def main():
             eval_interval=args.eval_interval,
             outdir=args.outdir,
             save_best_so_far_agent=False,
-            checkpoint_freq = 1000000,
+            checkpoint_freq = 2000000,
             # log_interval=args.log_interval,
             train_max_episode_len=timestep_limit,
             eval_max_episode_len=timestep_limit,
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
-
             total_reward_so_far=args.total_reward,
             # env_checkpointable=True,
 
