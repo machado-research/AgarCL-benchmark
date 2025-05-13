@@ -119,7 +119,7 @@ def main():
     parser.add_argument(
         "--eval-n-runs",
         type=int,
-        default=5,
+        default=0,
         help="Number of episodes run for each evaluation.",
     )
     parser.add_argument(
@@ -450,6 +450,7 @@ def main():
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
             total_reward_so_far=args.total_reward,
+            episode_idx=args.episode_idx,
             # env_checkpointable=True,
 
         )
