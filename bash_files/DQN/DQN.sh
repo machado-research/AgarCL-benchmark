@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --mail-type=ALL
-#SBATCH --account=aip-machado
-#SBATCH --mail-user=mamoham3@ualberta.ca
-#SBATCH --job-name=DQN_Exp_3
-#SBATCH --output=DQN_Exp_3.out
-#SBATCH --error=DQN_Exp_3.err
+#SBATCH --account=XX
+#SBATCH --mail-user=XX
+#SBATCH --job-name=XX
+#SBATCH --output=XX.out
+#SBATCH --error=XX.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gpus-per-task=1
@@ -25,6 +25,6 @@ export CC=clang
 export CXX=clang++
 export EGL_PLATFORM=surfaceless
 
-cd /home/mayman/projects/aip-machado/mayman/AgarLE-benchmark
+cd CODE_DIR
 
-python DQN_full_action_set.py --outdir "/home/mayman/Results/DQN_mode_2"
+python DQN_full_action_set.py --outdir "OUTPUT_DIR"

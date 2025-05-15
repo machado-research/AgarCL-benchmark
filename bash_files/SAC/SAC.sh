@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --mail-type=ALL
-#SBATCH --account=aip-machado
-#SBATCH --mail-user=mamoham3@ualberta.ca
-#SBATCH --job-name=SAC_mode_3_cont
-#SBATCH --output=SAC_mode_3_cont.out
-#SBATCH --error=SAC_mode_3_cont.err
+#SBATCH --account=XX
+#SBATCH --mail-user=XX
+#SBATCH --job-name=XX
+#SBATCH --output=XX.out
+#SBATCH --error=XX.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --gpus-per-task=1
@@ -14,7 +14,6 @@
 
 module load clang/17.0.6
 module load cmake
-# module load python/3.10.13 #Noise version
 module load python/3.11.5
 module load scipy-stack
 module load glfw

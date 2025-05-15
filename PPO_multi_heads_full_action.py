@@ -98,7 +98,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mamm/ayman/thesis/AgarLE-benchmark/PPO_mode_3_cont",
+        default="YOUR_OUTPUT_DIR",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -203,37 +203,36 @@ def main():
     # If seed=1 and processes=4, subprocess seeds are [4, 5, 6, 7].
     process_seeds = np.arange(args.num_envs) + args.seed * args.num_envs
     assert process_seeds.max() < 2**32
-    if (args.load != ""):
-        exp_id = args.load.split("/")[-2]
-        args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
-        episodic_rewards_path = os.path.join(args.outdir, "episodic_rewards.csv")
-        if os.path.exists(episodic_rewards_path):
-            with open(episodic_rewards_path, "r") as f:
-                last_line = f.readlines()[-1].strip()
-                args.step_offset = int(last_line.split(",")[1])
-                args.episode_idx = int(last_line.split(",")[0])
-    else: 
-        args.outdir = experiments.prepare_output_dir(args, args.outdir)
-    # if (args.load != ""): 
+    # if (args.load != ""):
     #     exp_id = args.load.split("/")[-2]
     #     args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
-    #     #Here update both --load-env and --load-replay-buffer
-    #     checkpoint_number = args.load.split("/")[-1].split("_")[0]
-    #     load_env_checkpoint_name = f"checkpoint_{checkpoint_number}.json"
-    #     args.load_env = os.path.join(args.load, load_env_checkpoint_name)
-    #     args.load_replay_buffer = os.path.join(args.load, f"{checkpoint_number}_checkpoint.replay.pkl")
-    #     print("Replay buffer loaded from: ", args.load_replay_buffer)
-    #     print("Env state loaded from: ", args.load_env)
-    #     args.step_offset = int(checkpoint_number)
     #     episodic_rewards_path = os.path.join(args.outdir, "episodic_rewards.csv")
     #     if os.path.exists(episodic_rewards_path):
     #         with open(episodic_rewards_path, "r") as f:
     #             last_line = f.readlines()[-1].strip()
-    #             args.total_reward = float(last_line.split(",")[2])
-    #     else:
-    #         args.total_reward = 0.0
-    #     print("Total reward so far: ", args.total_reward)
-    #     print("Step offset: ", args.step_offset)
+    #             args.step_offset = int(last_line.split(",")[1])
+    #             args.episode_idx = int(last_line.split(",")[0])
+    # else: 
+    if (args.load != ""): 
+        exp_id = args.load.split("/")[-2]
+        args.outdir = experiments.prepare_output_dir(args, args.outdir, exp_id)
+        #Here update both --load-env and 
+        checkpoint_number = args.load.split("/")[-1].split("_")[0]
+        load_env_checkpoint_name = f"checkpoint_{checkpoint_number}.json"
+        args.load_env = os.path.join(args.load, load_env_checkpoint_name)
+        print("Env state loaded from: ", args.load_env)
+        args.step_offset = int(checkpoint_number)
+        episodic_rewards_path = os.path.join(args.outdir, "episodic_rewards.csv")
+        if os.path.exists(episodic_rewards_path):
+            with open(episodic_rewards_path, "r") as f:
+                last_line = f.readlines()[-1].strip()
+                args.total_reward = float(last_line.split(",")[2])
+        else:
+            args.total_reward = 0.0
+            args.outdir = experiments.prepare_output_dir(args, args.outdir)
+
+        print("Total reward so far: ", args.total_reward)
+        print("Step offset: ", args.step_offset)
 
 
     def make_env(process_idx, test):
