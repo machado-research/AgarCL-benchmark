@@ -418,19 +418,6 @@ def main():
         with open(os.path.join(args.outdir, "demo_scores.json"), "w") as f:
             json.dump(eval_stats, f)
     else:
-        # experiments.train_agent_batch_with_evaluation(
-        #     agent=agent,
-        #     env=make_batch_env(False),
-        #     eval_env=make_batch_env(True),
-        #     outdir=args.outdir,
-        #     steps=args.steps,
-        #     eval_n_steps=None,
-        #     eval_n_episodes=args.eval_n_runs,
-        #     eval_interval=args.eval_interval,
-        #     log_interval=args.log_interval,
-        #     max_episode_len=timestep_limit,
-        #     save_best_so_far_agent=False,
-        # )
         experiments.train_agent_with_evaluation(
             agent=agent,
             env=make_batch_env(False),
@@ -442,7 +429,6 @@ def main():
             outdir=args.outdir,
             save_best_so_far_agent=False,
             checkpoint_freq = 2000000,
-            # log_interval=args.log_interval,
             train_max_episode_len=timestep_limit,
             eval_max_episode_len=timestep_limit,
             step_hooks=step_hooks,

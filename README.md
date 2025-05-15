@@ -1,12 +1,32 @@
 # Hyperparameter Tuning for DQN, PPO, and SAC
 
-This repository provides instructions for hyperparameter tuning in DQN, PPO, and SAC after modifications were made to improve PPO and DQN as the game complexity increased. Notably, some changes have been implemented to enhance PPO's performance.
+This repository provides comprehensive instructions to reproduce the results from our study on hyperparameter tuning for DQN, PPO, and SAC in hybrid-action environments. The algorithms were adapted to address the unique challenges posed by such environments:
+
+- **PPO and SAC**: Modified using the PFRL framework to handle hybrid actions.
+- **DQN**: Continuous action space discretized into 24 discrete actions, derived from 8 predefined directions combined with 3 discrete action types.
+
+## Predefined Directions
+
+The 8 predefined directions used for discretization are:
+
+- **Up** \((0, 1)\)
+- **Up-Right** \((1, 1)\)
+- **Right** \((1, 0)\)
+- **Down-Right** \((1, -1)\)
+- **Down** \((0, -1)\)
+- **Down-Left** \((-1, -1)\)
+- **Left** \((-1, 0)\)
+- **Up-Left** \((-1, 1)\)
+
+These adaptations were critical for enabling the algorithms to operate effectively in the hybrid-action environment. For further details, refer to the accompanying paper.
+
+---
 
 ## Setup Instructions
 
-### 1. Load Required Modules on Compute Canada (CC)
+### 1. Environment Setup (Compute Canada)
 
-Before running experiments, ensure that the required modules are loaded. Run the following commands:
+If using Compute Canada, load the required modules with the following commands:
 
 ```bash
 module load clang/17.0.6
@@ -18,51 +38,45 @@ module load cuda/12.2
 module load opencv/4.11.0
 ```
 
-### 2. Install Required Packages
+For other environments, refer to the [AgarCL installation guide](https://github.com/AgarCL/AgarCL).
 
-Install the necessary dependencies:
+### 2. Install Python Dependencies
 
-```bash
-pip install --no-index wandb
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install git+https://github.com/vedudx/pfrl.git@gymnasium_support
-pip install imageio
-```
-
-### 3. Install AgarLE
-
-Navigate to your AgarLE directory and install the package:
+Install the required Python packages:
 
 ```bash
-cd /home/mayman/projects/def-machado/mayman/AgarLE
-python setup.py install --user
+pip install -r requirements.txt
 ```
 
-### 4. Login to Weights & Biases (wandb)
+### 3. Install AgarCL
 
-Run the following command to log in to wandb:
+Navigate to the AgarLE directory and install the package:
 
 ```bash
-wandb login
+cd AgarCL_DIR
+python setup.py install --user  # or
+pip install -e .
 ```
 
-> **Note:** All the above installations are one-time processes and do not need to be repeated for every experiment.
+> **Note:** These installations are one-time processes and do not need to be repeated for subsequent experiments.
+
+---
 
 ## Running Hyperparameter Tuning
 
-A script has been implemented to automate the hyperparameter tuning process, including submitting jobs to Compute Canada.
+The hyperparameter tuning process is automated using scripts that facilitate job submission to cluster environments.
 
 ### DQN Hyperparameter Tuning
 
-Run the following command to generate and submit the DQN tuning script:
+Use the following command to generate and submit the DQN tuning script:
 
 ```bash
-python generate_bash.py DQN.sh /home/mayman/projects/def-machado/mayman/agarle_bench/AgarLE-benchmark/DQN_full_action_set.py \
-  --lr=1e-5,3e-5,1e-4,3e-4 \
-  --batch_accumulator="sum","mean" \
-  --minibatch_size=32,64 \
-  --tau=1e-2,1e-3,5e-3 \
-  --epochs=1,2,5
+python SubmitParallelJobs.py DQN.sh YOUR_DIR/DQN_full_action_set.py\
+  --lr=1e-5,3e-5,1e-4,3e-4\
+  --batch_accumulator="sum","mean"\
+  --minibatch_size=32,64\
+  --tau=1e-2,1e-3,5e-3\
+  --seed=0,1,2
 ```
 
 ### SAC Hyperparameter Tuning
@@ -70,50 +84,45 @@ python generate_bash.py DQN.sh /home/mayman/projects/def-machado/mayman/agarle_b
 Run the following command for SAC tuning:
 
 ```bash
-python generate_bash.py SAC.sh SAC_full_action_set.py \
-  --reward="reward_gym","min_max" \
-  --lr=3e-5,1e-4,1e-5 \
-  --soft-update-tau=0.01,0.005,0.001 \
-  --max-grad-norm=0.5,0.7,0.9
+python generate_bash.py SAC.sh SAC_full_action_set.py\
+  --reward="reward_gym","min_max"\
+  --lr=3e-5,1e-4,1e-5\
+  --soft-update-tau=0.01,0.005,0.001\
+  --temperature-lr=1e-4,1e-5\
+  --max-grad-norm=0.5,0.7,0.9\
+  --seed=0,1,2
 ```
 
 ### PPO Hyperparameter Tuning
 
-PPO requires a two-step tuning process due to the number of hyperparameters involved:
-
-#### Step 1: Initial Run
-
-Run the following command to determine initial best parameters:
+Run the following command for PPO tuning:
 
 ```bash
 python generate_bash.py PPO.sh /home/mayman/projects/def-machado/mayman/agarle_bench/AgarLE-benchmark/PPO_multi_heads_full_action.py \
   --reward="reward_gym","min_max" \
-  --lr=1e-5,3e-5,1e-4,3e-4 \
-  --epochs=10,15,20 \
-  --max-grad-norm=0.5,0.7,0.9
+  --lr=1e-5,3e-5,1e-4,3e-4\
+  --epochs=10,15,20\
+  --max-grad-norm=0.5,0.7,0.9\
+  --entropy-coef=0.05,0.01,0.1,0.5\
+  --clip-eps=0.2,0.4,0.5\
+  --value-func-coef=0.5,0.7,0.9\
+  --seed=0,1,2
 ```
 
-#### Step 2: Fine-Tuning with Best Parameters
+### Post-Tuning Analysis
 
-After determining the best parameters from Step 1, refine the search with the following command:
+After running the tuning scripts, use the `get_best_hyper` notebook to identify the best hyperparameters based on the metric of averaging the last 100 steps.
 
-```bash
-python generate_bash.py PPO.sh /home/mayman/projects/def-machado/mayman/agarle_bench/AgarLE-benchmark/PPO_multi_heads_full_action.py \
-  --reward="min_max" \
-  --lr=0.00003 \
-  --epochs=10 \
-  --max-grad-norm=0.5 \
-  --entropy-coef=0.05,0.01,0.1,0.5 \
-  --clip-eps=0.2,0.4,0.5 \
-  --value-func-coef=0.5,0.7,0.9
-```
+---
 
 ## Notes
 
-- Ensure that all required dependencies are installed before running experiments.
-- The `generate_bash.py` script automates job submission to Compute Canada.
-- PPO tuning is performed in two stages to optimize performance efficiently.
+- Ensure all dependencies are installed before running experiments.
+- The `generate_bash.py` script simplifies job submission to Compute Canada.
+- PPO tuning involves a two-stage process for efficient optimization.
+
+---
 
 ## Contact
 
-For any issues or improvements, feel free to raise an issue or contribute to this repository.
+For issues or suggestions, raise an issue or contribute to this repository.

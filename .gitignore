@@ -16,7 +16,7 @@ venv/
 res/
 agar/
 seed_*/
-SAC*/
+# SAC*/
 # ignore python caches
 .venv/
 venv/
