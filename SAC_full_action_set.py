@@ -64,9 +64,7 @@ class NormalizeReward(gym.RewardWrapper):
         """Normalize reward to [-1, 1] range."""
         if self.r_max - self.r_min < self.epsilon:
             return 0.0  # Avoid division by zero, return neutral reward
-        # print("REWARD: ", reward)
         r = (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon)
-        # r = 2 * (reward - self.r_min) / (self.r_max - self.r_min + self.epsilon) - 1
         return r
 
 def main():
@@ -78,7 +76,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mamm/ayman/thesis/AgarLE-benchmark/SAC_mode_3_cont",
+        default="PATH_TO_OUTPUT_DIR",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -244,11 +242,6 @@ def main():
             
         env = MultiActionWrapper(env)
         env = ObservationWrapper(env)
-        # env = gym.wrappers.ClipAction(env)
-        # env = gym.wrappers.flatten_observation.FlattenObservation(env)
-        # Cast observations to float32 because our model uses float32
-        # env = pfrl.wrappers.CastObservationToFloat32(env)
-        #Scaling Rewards
         if(args.reward == "reward_gym"):
             env = gym.wrappers.NormalizeReward(env, gamma=gamma)
             env = gym.wrappers.TransformReward(env, lambda reward: np.clip(reward, -10, 10))
@@ -454,19 +447,6 @@ def main():
         with open(os.path.join(args.outdir, "demo_scores.json"), "w") as f:
             json.dump(eval_stats, f)
     else:
-        # experiments.train_agent_batch_with_evaluation(
-        #     agent=agent,
-        #     env=make_batch_env(test=False),
-        #     eval_env=make_batch_env(test=True),
-        #     outdir=args.outdir,
-        #     steps=args.steps,
-        #     eval_n_steps=None,
-        #     eval_n_episodes=args.eval_n_runs,
-        #     eval_interval=args.eval_interval,
-        #     log_interval=args.log_interval,
-        #     max_episode_len=timestep_limit,
-        # )
-        
         experiments.train_agent_with_evaluation(
             agent=agent,
             env=make_batch_env(False),
@@ -485,6 +465,7 @@ def main():
             step_offset=args.step_offset,
             total_reward=args.total_reward,
             # env_checkpointable=True,
+            # buffer_checkpointable=True,
 
         )
 

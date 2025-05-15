@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="/home/mamm/ayman/thesis/AgarLE-benchmark/DQN_mode_3_cont",
+        default="PATH_TO_OUTPUT_DIR",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -298,16 +298,6 @@ def main():
     )
     
 
-    # Use the same hyperparameters as the Nature paper
-
-    # opt = pfrl.optimizers.RMSpropEpsInsideSqrt(
-    #     q_func.parameters(),
-    #     lr=2.5e-4,
-    #     alpha=0.95,
-    #     momentum=0.0,
-    #     eps=1e-2,
-    #     centered=True,
-    # )
     opt = torch.optim.Adam(q_func.parameters(), args.lr , eps=1.5 * 10**-4)
 
     rbuf = replay_buffers.ReplayBuffer(100000)#1e5
