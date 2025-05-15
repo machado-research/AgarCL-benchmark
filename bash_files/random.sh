@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --mail-type=ALL
-#SBATCH --account=rrg-machado
-#SBATCH --mail-user=mamoham3@ualberta.ca
-#SBATCH --job-name=rr_exp4_noise
-#SBATCH --output=rr_exp_4_noise.out
-#SBATCH --error=rr_exp_4_noise.err
+#SBATCH --account=XX
+#SBATCH --mail-user=XX
+#SBATCH --job-name=XX
+#SBATCH --output=XX.out
+#SBATCH --error=XX.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16GB
@@ -30,8 +30,4 @@ export EGL_PLATFORM=surfaceless
 seed=$SLURM_ARRAY_TASK_ID
 
 
-# cd /home/mayman/projects/def-machado/mayman/AgarLE
-
-# python3 setup.py install --user 
-
-python /home/mayman/projects/def-machado/mayman/AgarLE/bench/agarle_bench.py --seed $seed
+python random_walk.py --seed $seed

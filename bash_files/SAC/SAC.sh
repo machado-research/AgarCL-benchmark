@@ -25,18 +25,8 @@ export CXX=clang++
 export EGL_PLATFORM=surfaceless
 # Define the Singularity image
 
-# pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
-# pip install imageio
-# # pip install opencv-python
-# pip3 install tenacity
-# cd /home/mayman/projects/def-machado/mayman/AgarLE
 
-# python setup.py install --user 
-
-# python3 install -r /home/mayman/projects/def-machado/mayman/AgarLE-benchmark/requirements.txt
-
-
-cd /home/mayman/projects/aip-machado/mayman/AgarLE-benchmark
+cd OUTPUT_DIR
 
 # python train_SAC.py --seed $seed
-python SAC_full_action_set.py --reward "reward_gym" --lr 0.00001 --seed 0 --outdir '/home/mayman/Results/SAC_mode_6' --soft-update-tau 0.001 --max-grad-norm 0.7
+python SAC_full_action_set.py --outdir "OUTPUT_DIR" --reward "min_max" --lr 1e-5 --entropy-coef 0.05 --clip-eps 0.4 --value-func-coef 0.9 --max-grad-norm 0.5
