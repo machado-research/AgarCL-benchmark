@@ -19,9 +19,9 @@
     "c_death": 0,
     "video_path": "screen_video.mp4",
     "add_noise"     : true,
-    "mode"          : 7, 
+    "mode"          : 1, 
     "agent_view"    : true,
-    "number_steps"  : 5000, 
+    "number_steps"  : 500, 
     "env_type"      : 0, 
     "load_env_snapshot": 0
 }

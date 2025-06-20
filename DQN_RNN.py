@@ -16,7 +16,7 @@ import gym_agario
 import torch
 import wandb
 
-from RNN_arch import CustomCNN, DQNNetwork
+from RNN_arch import MultiInputEmbeddingModule, GRURecurrent, MLPActorHead
 
 from custom_utils import ModifyObservationWrapper, DiscreteActions
 
@@ -71,22 +71,22 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 100 * 10**6,
+        default= 10 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
         "--replay-start-size",
         type=int,
-        default=1 * 10**4,
+        default=5,
         help="Minimum replay buffer size before " + "performing gradient updates.",
     )
     parser.add_argument("--eval-n-steps", type=int, default=500)
-    parser.add_argument("--eval-interval", type=int, default=50000)
+    parser.add_argument("--eval-interval", type=int, default=100000)
     parser.add_argument("--n-best-episodes", type=int, default=1)
     parser.add_argument("--lr", type=float, default=6.25e-5)
     parser.add_argument("--target_update_interval", type=int, default=10**4)
     parser.add_argument("--batch_accumulator", type=str, default="sum") #sum or mean
-    parser.add_argument("--minibatch_size", type=int, default=32) 
+    parser.add_argument("--minibatch_size", type=int, default=1) 
     parser.add_argument("--tau", type=float, default=1e-2)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--wandb", action="store_true", help="Use wandb for logging")
@@ -97,6 +97,13 @@ def main():
     parser.add_argument("--load-replay-buffer", type=str, default="")
     parser.add_argument("--load-env", type=str, default="")
     parser.add_argument("--total-reward", type=int, default=0)
+    parser.add_argument(
+        "--episodic-update-len",
+        type=int,
+        default=10**3,
+        help="Maximum length of sequences for updating recurrent models",
+    )
+    
     args = parser.parse_args()
 
     if args.wandb:
@@ -168,24 +175,42 @@ def main():
     eval_env = make_env_(test=True)
 
     n_actions = env.action_space.n
-    n_atoms = 51
-    v_max = 10
-    v_min = -10
 
-    q_func = DQNNetwork(
-        obs_channels=4,  # Assuming RGB input
+    # q_func =  pfrl.nn.RecurrentSequential(
+    #     DQNNetwork(
+    #     obs_channels=4,  # Assuming RGB input
+    #     act_dim=n_actions,
+    #     obs_hidden_dim=128, 
+    #     )
+    # )
+    obs_channels = 4
+    q_func = pfrl.nn.RecurrentSequential(
+    MultiInputEmbeddingModule(
+        obs_channels=obs_channels,
         act_dim=n_actions,
-        hidden_dim=128, 
+        obs_hidden_dim_a=64,
+        obs_hidden_dim_b=64,
+        act_hidden_dim=16,
+        reward_hidden_dim=8
+    ),
+    GRURecurrent(
+        input_size=64 + 64 + 16 + 8,
+        hidden_size=128
+    ),
+    MLPActorHead(
+        hidden_size=128,
+        act_dim=n_actions
     )
-    
+)
+
 
     opt = torch.optim.Adam(q_func.parameters(), args.lr , eps=1.5 * 10**-4)
 
-    rbuf = replay_buffers.ReplayBuffer(100000)#1e5
+    rbuf = replay_buffers.EpisodicReplayBuffer(100000)#1e5
     
-    if args.load_replay_buffer != "":
-        rbuf.load(args.load_replay_buffer)
-        print("Replay buffer loaded from: ", args.load_replay_buffer)
+    # if args.load_replay_buffer != "":
+    #     rbuf.load(args.load_replay_buffer)
+    #     print("Replay buffer loaded from: ", args.load_replay_buffer)
         
 
     if args.ezGreedy:
@@ -207,8 +232,26 @@ def main():
         # Feature extractor
         return np.asarray(x, dtype=np.float32) / 255
 
-    Agent = agents.DQN
-    agent = Agent(
+    # agent = Agent(
+    #     q_func,
+    #     opt,
+    #     rbuf,
+    #     gpu=args.gpu,
+    #     gamma=0.99,
+    #     explorer=explorer,
+    #     replay_start_size=args.replay_start_size,
+    #     target_update_interval=args.target_update_interval,
+    #     clip_delta=True,
+    #     update_interval=4,
+    #     batch_accumulator=args.batch_accumulator,
+    #     minibatch_size = args.minibatch_size,
+    #     soft_update_tau = args.tau,
+    #     n_times_update  = args.epochs,
+    #     phi=phi,
+    #     recurrent = True,
+    #     episodic_update_len=args.episodic_update_len,
+    # )
+    agent = pfrl.agents.DQN(
         q_func,
         opt,
         rbuf,
@@ -217,13 +260,12 @@ def main():
         explorer=explorer,
         replay_start_size=args.replay_start_size,
         target_update_interval=args.target_update_interval,
-        clip_delta=True,
         update_interval=4,
-        batch_accumulator=args.batch_accumulator,
-        minibatch_size = args.minibatch_size,
-        soft_update_tau = args.tau,
-        n_times_update  = args.epochs,
+        batch_accumulator="mean",
         phi=phi,
+        minibatch_size=args.minibatch_size,
+        episodic_update_len=args.episodic_update_len,
+        recurrent=True,
     )
     step_hooks = []
     if args.lr_decay == True:
@@ -269,7 +311,7 @@ def main():
             )
         )
     else:
-        experiments.train_agent_with_evaluation(
+        experiments.train_agent_with_evaluation_RNN(
             agent=agent,
             env=env,
             steps=args.steps,
@@ -283,8 +325,8 @@ def main():
             step_hooks=step_hooks,
             case="continuing" if args.cont else "episodic",
             step_offset=args.step_offset,
-            env_checkpointable=True,
-            buffer_checkpointable=True,
+            env_checkpointable=False,
+            buffer_checkpointable=False,
             total_reward_so_far=args.total_reward,
         )
 
