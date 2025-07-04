@@ -98,7 +98,7 @@ def main():
     parser.add_argument(
         "--outdir",
         type=str,
-        default="YOUR_OUTPUT_DIR",
+        default="PPO_FULL_GAME_EPS",
         help=(
             "Directory path to save output files."
             " If it does not exist, it will be created."
@@ -107,7 +107,7 @@ def main():
     parser.add_argument(
         "--steps",
         type=int,
-        default= 20 * 10**6,
+        default= 100 * 10**6,
         help="Total number of timesteps to train the agent.",
     )
     parser.add_argument(
@@ -158,10 +158,10 @@ def main():
     )
 
     parser.add_argument(
-        "--clip-eps", type=float, default=0.2, help="Clipping parameter for PPO.")
+        "--clip-eps", type=float, default=0.4, help="Clipping parameter for PPO.")
 
     parser.add_argument(
-        "--entropy-coef", type=float, default=0.01, help="Entropy coefficient for PPO.")
+        "--entropy-coef", type=float, default=0.05, help="Entropy coefficient for PPO.")
 
     parser.add_argument(
         "--clip-eps-vf", type=float, default=0.2, help="Clipping parameter for the value function.")
@@ -170,10 +170,10 @@ def main():
         "--value-func-coef", type=float, default=0.9, help="Value function coefficient for PPO.")
 
     parser.add_argument(
-        "--max-grad-norm", type=float, default=0.5, help="Maximum norm of gradients.")
+        "--max-grad-norm", type=float, default=0.7, help="Maximum norm of gradients.")
 
     parser.add_argument(
-        "--lr", type=float, default=3e-5, help="The learning rate of the optimizer.")
+        "--lr", type=float, default=1e-5, help="The learning rate of the optimizer.")
 
 
     parser.add_argument("--batch-size", type=int, default=64, help="Minibatch size")
@@ -236,7 +236,7 @@ def main():
 
 
     def make_env(process_idx, test):
-        env_config = json.load(open('env_config.json', 'r'))
+        env_config = json.load(open('/home/mayman/projects/def-machado/mayman/AgarLE-benchmark/env_config.json', 'r'))
         env = gym.make(args.env, **env_config)
         gamma  = 0.99
         # Use different random seeds for train and test envs
@@ -274,7 +274,7 @@ def main():
         #         for idx, env in enumerate(range(args.num_envs))
         #     ]
         # )
-    env_config = json.load(open('env_config.json', 'r'))
+    env_config = json.load(open('/home/mayman/projects/def-machado/mayman/AgarLE-benchmark/env_config.json', 'r'))
     # Only for getting timesteps, and obs-action spaces
     sample_env = gym.make(args.env, **env_config)
     timestep_limit = sample_env.spec.max_episode_steps
@@ -436,7 +436,7 @@ def main():
             step_offset=args.step_offset,
             total_reward_so_far=args.total_reward,
             episode_idx=args.episode_idx,
-            # env_checkpointable=True,
+            env_checkpointable=True,
 
         )
 
